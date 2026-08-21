@@ -6,3 +6,19 @@ visualization_cache/
 
 # 所有 PNG 文件
 *.png
+
+# 本地快速回归测试输出
+results_smoke/
+.external_baselines/
+
+# Reproducible lab outputs are timestamped and regenerated on demand.
+labA_*/
+labB_*/
+labC_*/
+labD_*/
+
+# Archived local evidence and generated paper figures.
+results_*/
+results*.csv
+paper_figures/
+visualizations/
