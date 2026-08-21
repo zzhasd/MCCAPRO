@@ -1,0 +1,8 @@
+# 所有 Python 缓存目录
+__pycache__/
+
+# 所有 visualization_cache 目录
+visualization_cache/
+
+# 所有 PNG 文件
+*.png
