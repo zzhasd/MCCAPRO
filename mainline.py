@@ -2366,6 +2366,8 @@ class HybridMCPP:
             "tile_cv": coefficient_of_variation(tile_loads),
             "path_length": float(path_length),
             "path_lengths": path_loads.tolist(),
+            "maxpath": float(path_loads.max(initial=0.0)),
+            "totalpath": float(path_loads.sum()),
             "path_cv": coefficient_of_variation(path_loads),
             "turn_times": turn_times.tolist(),
             "turn_time_total": float(turn_times.sum()),

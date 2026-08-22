@@ -1,0 +1,33 @@
+# ==========================================
+# 自动巡检机器人 全局共享配置
+# ==========================================
+
+# 0 = M1 小车配置, 1 = M3PRO 小车配置, 2 = 本地Windows测试配置
+select_config: 2
+
+# 机器人自身配置
+robot:
+  robot_id: 0
+
+# 路径配置
+paths:
+  map_yaml:
+    0: "/home/jetson/yahboomcar_ros2_ws/yahboomcar_ws/src/yahboomcar_nav/maps/yahboomcar.yaml"
+    1: "/home/jetson/M3Pro_ws/install/M3Pro_navigation/share/M3Pro_navigation/map/yahboom_map.yaml"
+    2: "D:\\桌面\\MCCA-PRO\\real-lab\\maps\\yahboomcar_v3.yaml"
+  
+  image_dir:
+    0: "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto"
+    1: "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto"
+    2: "D:\\桌面\\MCCA-PRO\\real-lab\\tempphoto"
+
+# 算法核心参数
+algorithm:
+  base_size: 15
+  cell_size: 1
+  safety_radius_m: 0
+  white_ratio_threshold: 0.85  
+
+# 通信与网络配置
+network:
+  server_url: "http://192.168.123.217:9999/report"

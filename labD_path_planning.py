@@ -68,8 +68,11 @@ def main() -> None:
                    frameon=False, bbox_to_anchor=(0.5, 0.005), fontsize=8.5)
         fig.tight_layout(rect=(0, 0.075, 1, 1))
         save_figure(fig, output, f"paths_{size}x{size}")
-        print(f"size={size}: makespan={result['makespan']:.3f}, "
-              f"winner={result['selected_refinement_beam']}", flush=True)
+        print(
+            f"size={size}: max_path={result['maxpath']:.3f}, "
+            f"total_path={result['totalpath']:.3f}",
+            flush=True,
+        )
     columns = 3 if len(records) >= 5 else 2
     rows_count = (len(records) + columns - 1) // columns
     fig, axes = plt.subplots(rows_count, columns, figsize=(5.5 * columns, 5.65 * rows_count),
@@ -96,7 +99,6 @@ def main() -> None:
     })
     write_json(output / "config.json", {**vars(args), "sizes_resolved": sizes,
                                          "budget_resolved": budget})
-    print(f"outputs: {output.resolve()}")
 
 
 if __name__ == "__main__":
