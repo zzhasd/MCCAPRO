@@ -152,6 +152,8 @@ class HybridMCPP:
         enable_contracted_fact_beam: bool = False,
         refinement_max_iterations: int = 4,
         refinement_candidate_limit: int = 8,
+        strict_route_postprocess: bool = True,
+        postprocess_affects_beam_selection: bool = True,
     ) -> None:
         if map_size < 2 or robot_num < 1:
             raise ValueError("map_size >= 2 and robot_num >= 1 are required")
@@ -188,6 +190,11 @@ class HybridMCPP:
         self.refinement_max_iterations = max(0, int(refinement_max_iterations))
         self.refinement_candidate_limit = max(1, int(refinement_candidate_limit))
         self.refinement_time_limit = max(0.0, float(refinement_time_limit))
+        # IMPORTANT: this is a true post-process.  It is never consulted by
+        # partitioning, tiling, route-order search, or an individual beam's
+        # refinement.  By default the original raw beam winner is preserved.
+        self.strict_route_postprocess = bool(strict_route_postprocess)
+        self.postprocess_affects_beam_selection = bool(postprocess_affects_beam_selection)
         self.dual_guidance = bool(dual_guidance)
         raw_shapes = TILE_SHAPES if tile_shapes is None else tuple(tile_shapes)
         normalized_shapes: List[Tuple[int, int]] = []
@@ -1062,6 +1069,287 @@ class HybridMCPP:
                 expanded.append(centers[v].tolist())
         return expanded
 
+    @staticmethod
+    def _polyline_length(path: Sequence[Sequence[float]]) -> float:
+        """Euclidean length of a geometric polyline."""
+        if len(path) <= 1:
+            return 0.0
+        return float(sum(
+            np.linalg.norm(np.asarray(b, dtype=float) - np.asarray(a, dtype=float))
+            for a, b in zip(path, path[1:])
+        ))
+
+    @staticmethod
+    def _segment_closed_cell_interval(
+        a: Sequence[float],
+        b: Sequence[float],
+        cell_x: int,
+        cell_y: int,
+        tol: float = 1e-11,
+        expand: float = 0.0,
+    ) -> Optional[Tuple[float, float]]:
+        """Clip a segment against one closed unit cell.
+
+        Returns the parameter interval ``[t_enter, t_exit]`` for which
+        ``a + t * (b-a)`` lies in the closed square.  ``None`` means no
+        intersection.  ``expand`` is used only for conservative obstacle
+        checks; for region-boundary classification we keep the exact cell.
+        """
+        p = np.asarray(a, dtype=float)
+        q = np.asarray(b, dtype=float)
+        d = q - p
+        lo = np.array((cell_x - expand, cell_y - expand), dtype=float)
+        hi = np.array((cell_x + 1.0 + expand, cell_y + 1.0 + expand), dtype=float)
+        t_enter, t_exit = 0.0, 1.0
+        for axis in range(2):
+            if abs(float(d[axis])) <= tol:
+                if float(p[axis]) < float(lo[axis]) - tol or float(p[axis]) > float(hi[axis]) + tol:
+                    return None
+                continue
+            t0 = float((lo[axis] - p[axis]) / d[axis])
+            t1 = float((hi[axis] - p[axis]) / d[axis])
+            if t0 > t1:
+                t0, t1 = t1, t0
+            t_enter = max(t_enter, t0)
+            t_exit = min(t_exit, t1)
+            if t_enter > t_exit + tol:
+                return None
+        if t_exit < -tol or t_enter > 1.0 + tol:
+            return None
+        return max(0.0, t_enter), min(1.0, t_exit)
+
+    @classmethod
+    def _segment_intersects_closed_cell(
+        cls,
+        a: Sequence[float],
+        b: Sequence[float],
+        cell_x: int,
+        cell_y: int,
+        tol: float = 1e-11,
+    ) -> bool:
+        """True if a segment has ANY contact with a closed obstacle cell.
+
+        A black obstacle is treated as the closed square
+        ``[x,x+1] x [y,y+1]``.  Interior crossing, edge contact, edge overlap,
+        and even a single corner touch are all collisions.
+        """
+        return cls._segment_closed_cell_interval(
+            a, b, cell_x, cell_y, tol=tol, expand=tol
+        ) is not None
+
+    @classmethod
+    def _other_region_contact_is_corner_only(
+        cls,
+        a: Sequence[float],
+        b: Sequence[float],
+        cell_x: int,
+        cell_y: int,
+        tol: float = 1e-10,
+    ) -> bool:
+        """Whether contact with another robot's cell is allowed.
+
+        The requested rule is stricter than the old region-closure test:
+        another robot's cell may be touched only at an isolated grid corner.
+        Entering its interior, touching a non-corner point on an edge, or
+        overlapping an edge for a nonzero length are all forbidden.
+        """
+        interval = cls._segment_closed_cell_interval(
+            a, b, cell_x, cell_y, tol=tol, expand=0.0
+        )
+        if interval is None:
+            return True
+        t_enter, t_exit = interval
+        if t_exit - t_enter > tol:
+            return False
+        p = np.asarray(a, dtype=float)
+        q = np.asarray(b, dtype=float)
+        hit = p + 0.5 * (t_enter + t_exit) * (q - p)
+        x_is_corner = (
+            abs(float(hit[0]) - cell_x) <= 10.0 * tol
+            or abs(float(hit[0]) - (cell_x + 1.0)) <= 10.0 * tol
+        )
+        y_is_corner = (
+            abs(float(hit[1]) - cell_y) <= 10.0 * tol
+            or abs(float(hit[1]) - (cell_y + 1.0)) <= 10.0 * tol
+        )
+        return bool(x_is_corner and y_is_corner)
+
+    def _segment_is_portal_shortcut_legal(
+        self,
+        a: Sequence[float],
+        b: Sequence[float],
+        rid: int,
+    ) -> bool:
+        """Check one candidate center-to-center replacement segment.
+
+        Only *new* A->C shortcut candidates are judged here.
+
+        Rules:
+          1. black obstacle cells are closed: ANY intersection is forbidden;
+          2. cells assigned to another robot may be contacted only at an
+             isolated corner; their interiors/edges may not be crossed;
+          3. no alternative route is generated when the shortcut is illegal --
+             the original ``A -> portal -> C`` geometry is kept unchanged.
+        """
+        if self.assignments is None:
+            return False
+        p = np.asarray(a, dtype=float)
+        q = np.asarray(b, dtype=float)
+        if p.shape != (2,) or q.shape != (2,):
+            return False
+        eps = 1e-10
+        if (
+            np.any(p < -eps) or np.any(q < -eps)
+            or np.any(p > self.n + eps) or np.any(q > self.n + eps)
+        ):
+            return False
+
+        min_x = max(0, int(math.floor(min(float(p[0]), float(q[0])) - 1e-9)))
+        max_x = min(self.n - 1, int(math.floor(max(float(p[0]), float(q[0])) + 1e-9)))
+        min_y = max(0, int(math.floor(min(float(p[1]), float(q[1])) - 1e-9)))
+        max_y = min(self.n - 1, int(math.floor(max(float(p[1]), float(q[1])) + 1e-9)))
+
+        for x in range(min_x, max_x + 1):
+            for y in range(min_y, max_y + 1):
+                if self.obstacles[x, y]:
+                    if self._segment_intersects_closed_cell(p, q, x, y):
+                        return False
+                elif int(self.assignments[x, y]) != rid:
+                    if not self._other_region_contact_is_corner_only(p, q, x, y):
+                        return False
+        return True
+
+    @staticmethod
+    def _dedupe_polyline(path: Sequence[Sequence[float]]) -> List[List[float]]:
+        out: List[List[float]] = []
+        for point in path:
+            p = np.asarray(point, dtype=float)
+            if not out or not np.allclose(
+                p, np.asarray(out[-1], dtype=float), atol=1e-12, rtol=0.0
+            ):
+                out.append(p.tolist())
+        return out
+
+    @staticmethod
+    def _point_key(point: Sequence[float], digits: int = 10) -> Tuple[float, float]:
+        p = np.asarray(point, dtype=float)
+        return (round(float(p[0]), digits), round(float(p[1]), digits))
+
+    def _postprocess_one_route_strict(self, rid: int) -> None:
+        """Pure local portal deletion on an already-finished route.
+
+        The raw route generated by ``_expand_metric_tour`` has the geometric
+        pattern
+
+            tile center A -> shared-edge portal p -> tile center C
+
+        along every tile-graph edge.  For each such triplet we test only the
+        direct segment A->C.  If it satisfies the requested collision rules,
+        ``p`` is deleted.  Otherwise the original triplet is kept verbatim.
+
+        Crucially, this pass never creates BFS/cell-center waypoints and never
+        changes assignment, tiles, TSP order, refinement, or beam state.
+        """
+        route = self.routes.get(rid)
+        if not route or route.get("strict_postprocessed", False):
+            return
+
+        raw_path = self._dedupe_polyline(route.get("path", []))
+        raw_length = float(route.get("length", self._polyline_length(raw_path)))
+        raw_mission = float(route.get("mission_time", 0.0))
+        if len(raw_path) < 3:
+            route["raw_length"] = raw_length
+            route["raw_mission_time"] = raw_mission
+            route["shortcut_gain"] = 0.0
+            route["shortcut_gain_pct"] = 0.0
+            route["portal_shortcuts_tested"] = 0
+            route["portal_shortcuts_accepted"] = 0
+            route["strict_postprocessed"] = True
+            return
+
+        tiles = [t for t in self.tiles if t[4] == rid]
+        centers = [
+            np.array((t[0] + t[2] / 2.0, t[1] + t[3] / 2.0), dtype=float)
+            for t in tiles
+        ]
+        center_keys = {self._point_key(center) for center in centers}
+        depot = np.asarray(self.robot_starts_xy[rid], dtype=float) + 0.5
+        depot_key = self._point_key(depot)
+
+        remove_portals = set()
+        shortcut_segments: List[Tuple[List[float], List[float]]] = []
+        tested = 0
+
+        # Work from the immutable raw path.  Therefore every decision is exactly
+        # the requested local A-p-C test and does not cascade into A-D shortcuts.
+        for i in range(1, len(raw_path) - 1):
+            prev_key = self._point_key(raw_path[i - 1])
+            mid_key = self._point_key(raw_path[i])
+            next_key = self._point_key(raw_path[i + 1])
+
+            # _expand_metric_tour emits only centers and portals.  _attach_depot
+            # can additionally add the depot.  A portal is therefore a raw path
+            # point that is neither a tile center nor the depot, bracketed by two
+            # tile centers.
+            if prev_key not in center_keys or next_key not in center_keys:
+                continue
+            if mid_key in center_keys or mid_key == depot_key:
+                continue
+
+            tested += 1
+            a = raw_path[i - 1]
+            c = raw_path[i + 1]
+            if self._segment_is_portal_shortcut_legal(a, c, rid):
+                remove_portals.add(i)
+                shortcut_segments.append((list(a), list(c)))
+
+        new_path = [
+            point for i, point in enumerate(raw_path) if i not in remove_portals
+        ]
+        new_path = self._dedupe_polyline(new_path)
+
+        # Sanity-check only the NEW center-to-center segments.  Original portal
+        # segments are trusted exactly as before; an illegal shortcut simply
+        # leaves them untouched.
+        for a, c in shortcut_segments:
+            if not self._segment_is_portal_shortcut_legal(a, c, rid):
+                raise AssertionError("Accepted portal shortcut became illegal")
+
+        new_length = self._polyline_length(new_path)
+        quarter_turns, turn_time = self._path_turn_metrics(new_path)
+        mission_time = (
+            self.service_time_per_tile * len(tiles)
+            + new_length / self.robot_speed
+            + turn_time
+        )
+
+        route["raw_path"] = raw_path
+        route["raw_length"] = raw_length
+        route["raw_mission_time"] = raw_mission
+        route["path"] = new_path
+        route["length"] = float(new_length)
+        route["quarter_turns"] = float(quarter_turns)
+        route["turn_time"] = float(turn_time)
+        route["mission_time"] = float(mission_time)
+        route["shortcut_gain"] = float(raw_length - new_length)
+        route["shortcut_gain_pct"] = (
+            100.0 * (raw_length - new_length) / raw_length
+            if raw_length > 1e-12 else 0.0
+        )
+        route["portal_shortcuts_tested"] = int(tested)
+        route["portal_shortcuts_accepted"] = int(len(remove_portals))
+        route["shortcut_segments"] = shortcut_segments
+        route["strict_postprocessed"] = True
+        route["routing_mode"] = str(route.get("routing_mode", "route")) + "+portal_shortcut"
+
+    def postprocess_routes_strict(self) -> Dict[int, dict]:
+        """Delete only unnecessary existing portal points; add no new points."""
+        if not self.strict_route_postprocess:
+            return self.routes
+        for rid in range(self.k):
+            self._postprocess_one_route_strict(rid)
+        return self.routes
+
     def route_tsp(self, robot_ids: Optional[Sequence[int]] = None) -> Dict[int, dict]:
         ids = list(range(self.k)) if robot_ids is None else list(map(int, robot_ids))
         routes = {} if robot_ids is None else dict(self.routes)
@@ -1761,21 +2049,30 @@ class HybridMCPP:
         max_iterations: int = 4,
         candidate_limit: int = 8,
     ) -> List[dict]:
-        """Keep assignment, route-aware, and FACT-tree incumbents."""
+        """Keep assignment, route-aware, and FACT-tree incumbents.
+
+        Each beam is refined using the ORIGINAL raw route objective.  Only
+        after that beam is completely finished do we post-process a copy of its
+        route.  Therefore post-processing can never alter that beam's tiling.
+
+        By default the raw winner is also preserved, so the final tiling is
+        exactly the one the original algorithm would select.  Set
+        ``postprocess_affects_beam_selection=True`` only if you explicitly want
+        to re-rank the already-finished beams by their post-processed makespan;
+        in that optional mode the winner (and hence displayed tiling) may change
+        but no beam is re-optimized under the shortcut objective.
+        """
         budget = (
             self.refinement_time_limit
             if time_limit_per_beam is None else max(0.0, float(time_limit_per_beam))
         )
         initial_state = (
-            self.assignments.copy(), list(self.tiles), dict(self.routes),
+            self.assignments.copy(), list(self.tiles), copy.deepcopy(self.routes),
             copy.deepcopy(self.rng.bit_generator.state), self.dual_guidance,
             self.orientation_lifted_routing,
         )
         beams = []
         if not self.tile_shapes:
-            # In the strict 1x1 reduction there is no alternative exact cover,
-            # so retiling and FACT-patch beams duplicate the same feasible
-            # decisions while consuming three times the budget.
             beam_configs = [(False, False, False, False, "assignment_geometry")]
         else:
             beam_configs = [
@@ -1791,10 +2088,11 @@ class HybridMCPP:
             and all(tile[2:4] == (1, 1) for tile in self.tiles)
         ):
             beam_configs.append((False, False, False, False, "orientation_lifted"))
+
         for joint_retile, use_fact, use_dual, use_contracted, beam_name in beam_configs:
             self.assignments = initial_state[0].copy()
             self.tiles = list(initial_state[1])
-            self.routes = dict(initial_state[2])
+            self.routes = copy.deepcopy(initial_state[2])
             self.rng.bit_generator.state = copy.deepcopy(initial_state[3])
             self.dual_guidance = use_dual
             self.orientation_lifted_routing = beam_name == "orientation_lifted"
@@ -1810,29 +2108,73 @@ class HybridMCPP:
                 contracted_fact=use_contracted,
             )
             beam_runtime = time.perf_counter() - beam_started
-            makespan = max(float(self.routes[r]["mission_time"]) for r in range(self.k))
-            beams.append((
-                makespan, self.assignments, self.tiles, self.routes, list(trace), beam_name,
-                beam_runtime,
-            ))
-        winner = min(beams, key=lambda beam: (beam[0], len(beam[2])))
-        _, self.assignments, self.tiles, self.routes, trace, selected_beam, _ = winner
+
+            # Freeze the completed raw beam state first.
+            raw_assignments = self.assignments.copy()
+            raw_tiles = list(self.tiles)
+            raw_routes = copy.deepcopy(self.routes)
+            raw_makespan = max(float(raw_routes[r]["mission_time"]) for r in range(self.k))
+
+            # Now, and only now, post-process route geometry.  Assignment/tiles
+            # are immutable here.  This cost is intentionally outside the beam
+            # refinement budget because it is a separate geometric pass.
+            if self.strict_route_postprocess:
+                self.postprocess_routes_strict()
+            post_routes = copy.deepcopy(self.routes)
+            post_makespan = max(float(post_routes[r]["mission_time"]) for r in range(self.k))
+
+            beams.append({
+                "raw_makespan": float(raw_makespan),
+                "post_makespan": float(post_makespan),
+                "assignments": raw_assignments,
+                "tiles": raw_tiles,
+                "raw_routes": raw_routes,
+                "post_routes": post_routes,
+                "trace": list(trace),
+                "beam": beam_name,
+                "runtime": beam_runtime,
+            })
+
+        if self.postprocess_affects_beam_selection and self.strict_route_postprocess:
+            winner = min(
+                beams,
+                key=lambda beam: (beam["post_makespan"], len(beam["tiles"])),
+            )
+            winner_basis = "postprocessed_makespan"
+        else:
+            winner = min(
+                beams,
+                key=lambda beam: (beam["raw_makespan"], len(beam["tiles"])),
+            )
+            winner_basis = "raw_makespan"
+
+        self.assignments = winner["assignments"].copy()
+        self.tiles = list(winner["tiles"])
+        self.routes = copy.deepcopy(
+            winner["post_routes"] if self.strict_route_postprocess else winner["raw_routes"]
+        )
+        trace = list(winner["trace"])
+        selected_beam = str(winner["beam"])
         self.selected_refinement_beam = selected_beam
         self.dual_guidance = initial_state[4]
         self.orientation_lifted_routing = initial_state[5]
         self.refinement_trace = trace
         self.refinement_beams = [
             {
-                "makespan": beam[0],
-                "tile_count": len(beam[2]),
-                "beam": beam[5],
-                "runtime": beam[6],
-                "iterations": len(beam[4]),
+                "makespan": beam["raw_makespan"],
+                "raw_makespan": beam["raw_makespan"],
+                "postprocessed_makespan": beam["post_makespan"],
+                "postprocess_gain": beam["raw_makespan"] - beam["post_makespan"],
+                "tile_count": len(beam["tiles"]),
+                "beam": beam["beam"],
+                "runtime": beam["runtime"],
+                "iterations": len(beam["trace"]),
                 "accepted_modes": {
-                    mode: sum(step.get("tiling_mode") == mode for step in beam[4])
-                    for mode in sorted({step.get("tiling_mode", "") for step in beam[4]})
+                    mode: sum(step.get("tiling_mode") == mode for step in beam["trace"])
+                    for mode in sorted({step.get("tiling_mode", "") for step in beam["trace"]})
                     if mode
                 },
+                "winner_basis": winner_basis if beam is winner else "",
             }
             for beam in beams
         ]
@@ -1915,6 +2257,23 @@ class HybridMCPP:
                     break
         return collision_free, depot_closed
 
+    def _validate_strict_obstacle_routes(self) -> bool:
+        """Check that no final route segment even touches a black cell."""
+        for rid in range(self.k):
+            path = self.routes.get(rid, {}).get("path", [])
+            for a, b in zip(path, path[1:]):
+                p = np.asarray(a, dtype=float)
+                q = np.asarray(b, dtype=float)
+                min_x = max(0, int(math.floor(min(float(p[0]), float(q[0])) - 1e-9)))
+                max_x = min(self.n - 1, int(math.floor(max(float(p[0]), float(q[0])) + 1e-9)))
+                min_y = max(0, int(math.floor(min(float(p[1]), float(q[1])) - 1e-9)))
+                max_y = min(self.n - 1, int(math.floor(max(float(p[1]), float(q[1])) + 1e-9)))
+                for x in range(min_x, max_x + 1):
+                    for y in range(min_y, max_y + 1):
+                        if self.obstacles[x, y] and self._segment_intersects_closed_cell(p, q, x, y):
+                            return False
+        return True
+
     def validate(self) -> dict:
         covered = np.zeros((self.n, self.n), dtype=np.int16)
         for x, y, w, h, rid in self.tiles:
@@ -1936,8 +2295,11 @@ class HybridMCPP:
             connected.append(len(seen) == len(cells))
             rooted.append(self.assignments.ravel()[self.robot_start_flats[rid]] == rid)
         route_collision_free, depot_closed = self._validate_routes()
+        strict_obstacle_clear = self._validate_strict_obstacle_routes()
         if not route_collision_free:
             raise AssertionError("A route segment leaves its assigned free-space region")
+        if self.strict_route_postprocess and not strict_obstacle_clear:
+            raise AssertionError("A post-processed route touches a closed obstacle cell")
         if not depot_closed:
             raise AssertionError("A route does not start and end at its robot depot")
         return {
@@ -1945,6 +2307,7 @@ class HybridMCPP:
             "connected_regions": all(connected),
             "rooted_regions": all(rooted),
             "route_collision_free": route_collision_free,
+            "strict_obstacle_no_touch": strict_obstacle_clear,
             "depot_closed": depot_closed,
         }
 
@@ -1976,6 +2339,12 @@ class HybridMCPP:
                     candidate_limit=self.refinement_candidate_limit,
                 )
                 refinement_time = time.perf_counter() - refine_start
+            # TRUE post-process: all partition/tiling/routing/refinement choices
+            # are already frozen before this call.  For coupled mode the beam
+            # routine may already have processed the selected copy; the method
+            # is idempotent and will simply skip it.
+            if self.strict_route_postprocess:
+                self.postprocess_routes_strict()
             path_length = sum(r["length"] for r in self.routes.values())
         times.routing = time.perf_counter() - t
         valid = self.validate()
@@ -2009,6 +2378,10 @@ class HybridMCPP:
             "robot_speed": self.robot_speed,
             "turn_time_90": self.turn_time_90,
             "orientation_lifted_routing": self.orientation_lifted_routing,
+            "strict_route_postprocess": self.strict_route_postprocess,
+            "postprocess_affects_beam_selection": self.postprocess_affects_beam_selection,
+            "raw_path_lengths": [float(self.routes.get(rid, {}).get("raw_length", self.routes.get(rid, {}).get("length", 0.0))) for rid in range(self.k)],
+            "shortcut_gains": [float(self.routes.get(rid, {}).get("shortcut_gain", 0.0)) for rid in range(self.k)],
             "baseline_root_repaired": self.baseline_root_repaired,
             "initial_makespan": float(initial_makespan),
             "refinement_iterations": len(self.refinement_trace),
