@@ -228,18 +228,32 @@ class TileFirstMCPP:
         self.routes: Dict[int, dict] = {}
         self.centroids_xy: List[Optional[Cell]] = []
 
+        # Geometry caches for the immutable global tiling.  Partition search only
+        # changes tile owners, never rectangle geometry, so center/portal edge
+        # data can be built once and reused by every exact route evaluation.
+        self._global_tile_index: Dict[Tuple[int, int, int, int], int] = {}
+        self._global_centers: List[np.ndarray] = []
+        self._global_edge_weights: Dict[Tuple[int, int], float] = {}
+        self._global_edge_portals: Dict[Tuple[int, int], np.ndarray] = {}
+        self._transfer_cache_owners: Optional[np.ndarray] = None
+        self._transfer_articulations: Dict[int, set[int]] = {}
+        self._transfer_counts: Dict[int, int] = {}
+
     def _region_mask(self, rid: int) -> np.ndarray:
         return self.assignments == rid
 
     def _scan_greedy(self, mask: np.ndarray, rid: int, xrev: bool, yrev: bool) -> List[Tile]:
         covered = np.zeros_like(mask)
         out: List[Tile] = []
-        xr = range(self.width - 1, -1, -1) if xrev else range(self.width)
-        yr_values = list(range(self.height - 1, -1, -1) if yrev else range(self.height))
         for w, h in self.tile_shapes:
+            # Compute mask-feasible placements once in C.  The subsequent Python
+            # scan retains the exact original x/y order and covered-cell test.
+            legal = np.lib.stride_tricks.sliding_window_view(mask, (w, h)).all(axis=(-2, -1))
+            xr = range(self.width - w, -1, -1) if xrev else range(self.width - w + 1)
+            yr = range(self.height - h, -1, -1) if yrev else range(self.height - h + 1)
             for x in xr:
-                for y in yr_values:
-                    if x + w <= self.width and y + h <= self.height and mask[x:x+w, y:y+h].all() and not covered[x:x+w, y:y+h].any():
+                for y in yr:
+                    if legal[x, y] and not covered[x:x+w, y:y+h].any():
                         out.append((x, y, w, h, rid))
                         covered[x:x+w, y:y+h] = True
         for x, y in np.argwhere(mask & ~covered):
@@ -249,10 +263,11 @@ class TileFirstMCPP:
     def _randomized_greedy(self, mask: np.ndarray, rid: int, trials: int = 8) -> List[Tile]:
         placements = []
         for w, h in self.tile_shapes:
-            for x in range(self.width - w + 1):
-                for y in range(self.height - h + 1):
-                    if mask[x:x+w, y:y+h].all():
-                        placements.append((x, y, w, h, rid))
+            legal = np.lib.stride_tricks.sliding_window_view(mask, (w, h)).all(axis=(-2, -1))
+            # np.argwhere is row-major here, exactly matching the original nested
+            # x-then-y loops, hence RNG jitter is attached to identical placements.
+            for x, y in np.argwhere(legal):
+                placements.append((int(x), int(y), w, h, rid))
         best: Optional[List[Tile]] = None
         for trial in range(trials):
             covered = np.zeros_like(mask)
@@ -347,26 +362,39 @@ class TileFirstMCPP:
         m = len(order)
         if m < 4:
             return order
+        # Keep one compact integer buffer for the whole local search instead of
+        # rebuilding ``np.asarray(order)`` and ``np.arange`` for every i.  The
+        # scan order, gain formula, tie-breaking and accepted reversals are
+        # unchanged, so this is a pure implementation-level optimization.
+        arr = np.asarray(order, dtype=np.intp).copy()
         for _ in range(passes):
             improved = False
             for i in range(m - 2):
-                a, b = order[i], order[(i + 1) % m]
+                a = int(arr[i])
+                b = int(arr[i + 1])
                 stop = m - (1 if i == 0 else 0)
-                js = np.arange(i + 2, stop)
-                if not len(js):
+                start = i + 2
+                if start >= stop:
                     continue
-                arr = np.asarray(order, dtype=int)
-                c = arr[js]
-                e = arr[(js + 1) % m]
+                c = arr[start:stop]
+                if stop < m:
+                    e = arr[start + 1:stop + 1]
+                else:
+                    # Only i>0 reaches stop==m.  Preserve the original modulo
+                    # edge for j==m-1 without allocating an index vector.
+                    e = np.empty_like(c)
+                    if len(c) > 1:
+                        e[:-1] = arr[start + 1:m]
+                    e[-1] = arr[0]
                 gains = d[a, c] + d[b, e] - d[a, b] - d[c, e]
-                p = int(np.argmin(gains))
-                if gains[p] < -1e-9:
-                    j = int(js[p])
-                    order[i+1:j+1] = reversed(order[i+1:j+1])
+                pos = int(np.argmin(gains))
+                if gains[pos] < -1e-9:
+                    j = start + pos
+                    arr[i + 1:j + 1] = arr[i + 1:j + 1][::-1]
                     improved = True
             if not improved:
                 break
-        return order
+        return arr.tolist()
 
     @staticmethod
     def _tour_length(order: Sequence[int], d: np.ndarray) -> float:
@@ -380,29 +408,79 @@ class TileFirstMCPP:
         m = len(d)
         if m <= 1:
             return ([start] if m else []), ([start] if m else []), 0.0
-        upper = minimum_spanning_tree(sp.csr_matrix(d))
-        weight = float(upper.data.sum())
-        tree = (upper + upper.T).tocsr()
-        preorder = list(map(int, depth_first_order(tree, start, directed=False, return_predecessors=False)))
+
+        # Exact low-memory Kruskal equivalent to the previous SciPy sparse-MST
+        # call.  Stable ordering is essential because equal-weight metric edges
+        # are common; it reproduces SciPy's edge set and DFS preorder exactly.
+        ui, vi = np.triu_indices(m, k=1)
+        weights = d[ui, vi]
+        edge_order = np.argsort(weights, kind="stable")
+        parent = np.arange(m, dtype=np.int32)
+        rank = np.zeros(m, dtype=np.int8)
+        selected: List[Tuple[int, int, float]] = []
+
+        def find_root(x: int) -> int:
+            root = x
+            while parent[root] != root:
+                root = int(parent[root])
+            while parent[x] != x:
+                nxt = int(parent[x])
+                parent[x] = root
+                x = nxt
+            return root
+
+        for edge_idx in edge_order:
+            u = int(ui[edge_idx])
+            v = int(vi[edge_idx])
+            ru = find_root(u)
+            rv = find_root(v)
+            if ru == rv:
+                continue
+            if rank[ru] < rank[rv]:
+                ru, rv = rv, ru
+            parent[rv] = ru
+            if rank[ru] == rank[rv]:
+                rank[ru] += 1
+            selected.append((u, v, float(weights[edge_idx])))
+            if len(selected) == m - 1:
+                break
+
+        # CSR/COO output from the old implementation was row-major.  Sorting
+        # selected edges restores that exact adjacency append and sum order.
+        selected.sort(key=lambda z: (z[0], z[1]))
         adjacency = [[] for _ in range(m)]
-        coo = upper.tocoo()
-        for u, v in zip(coo.row, coo.col):
-            adjacency[int(u)].append(int(v))
-            adjacency[int(v)].append(int(u))
-        walk = [start]
-        stack = [(start, -1, iter(adjacency[start]))]
+        for u, v, _ in selected:
+            adjacency[u].append(v)
+            adjacency[v].append(u)
+        weight = float(np.asarray([w for _, _, w in selected], dtype=float).sum())
+
+        preorder: List[int] = []
+        seen = np.zeros(m, dtype=bool)
+        stack = [start]
         while stack:
-            node, parent, children = stack[-1]
+            u = stack.pop()
+            if seen[u]:
+                continue
+            seen[u] = True
+            preorder.append(u)
+            for v in reversed(adjacency[u]):
+                if not seen[v]:
+                    stack.append(v)
+
+        walk = [start]
+        stack2 = [(start, -1, iter(adjacency[start]))]
+        while stack2:
+            node, parent_node, children = stack2[-1]
             try:
                 child = next(children)
-                if child == parent:
+                if child == parent_node:
                     continue
                 walk.append(child)
-                stack.append((child, node, iter(adjacency[child])))
+                stack2.append((child, node, iter(adjacency[child])))
             except StopIteration:
-                stack.pop()
-                if stack:
-                    walk.append(stack[-1][0])
+                stack2.pop()
+                if stack2:
+                    walk.append(stack2[-1][0])
         return preorder, walk, weight
 
     def _path_turn_metrics(self, path: Sequence[Sequence[float]]) -> Tuple[float, float]:
@@ -413,13 +491,16 @@ class TileFirstMCPP:
         """
         previous_angle = math.pi / 2.0
         quarter_turns = 0.0
+        half_pi = math.pi / 2.0
+        two_pi = 2.0 * math.pi
         for p, q in zip(path, path[1:]):
-            delta = np.asarray(q, dtype=float) - np.asarray(p, dtype=float)
-            if float(np.linalg.norm(delta)) <= 1e-12:
+            dx = float(q[0]) - float(p[0])
+            dy = float(q[1]) - float(p[1])
+            if math.hypot(dx, dy) <= 1e-12:
                 continue
-            angle = math.atan2(float(delta[1]), float(delta[0]))
-            change = abs((angle - previous_angle + math.pi) % (2.0 * math.pi) - math.pi)
-            quarter_turns += change / (math.pi / 2.0)
+            angle = math.atan2(dy, dx)
+            change = abs((angle - previous_angle + math.pi) % two_pi - math.pi)
+            quarter_turns += change / half_pi
             previous_angle = angle
         return float(quarter_turns), float(quarter_turns * self.turn_time_90)
 
@@ -428,16 +509,46 @@ class TileFirstMCPP:
     ) -> Tuple[List[np.ndarray], np.ndarray, np.ndarray, Dict[Tuple[int, int], np.ndarray]]:
         """Shortest center-to-center metric on the obstacle-safe tile graph.
 
-        A segment between centers of two edge-adjacent rectangles lies inside
-        their union.  Therefore every graph path is collision-free, while
-        sparse Dijkstra provides the exact shortest path in this geometric
-        roadmap without the artificial center-to-cell-anchor detour.
+        Global rectangle geometry is immutable after tiling.  Reuse its exact
+        center/portal edge data and only induce the current robot subgraph.
+        This preserves the same sparse Dijkstra metric and predecessor semantics
+        while eliminating repeated cell-level geometry reconstruction.
         """
+        if self._global_tile_index and len(self._global_centers) == len(self.global_tiles):
+            global_ids = [
+                self._global_tile_index[(t[0], t[1], t[2], t[3])] for t in tiles
+            ]
+            local_of = {gid: i for i, gid in enumerate(global_ids)}
+            centers = [self._global_centers[gid] for gid in global_ids]
+            rows, cols, data = [], [], []
+            edge_portals: Dict[Tuple[int, int], np.ndarray] = {}
+            for gu in global_ids:
+                u = local_of[gu]
+                for gv in self.tile_adjacency[gu]:
+                    if gv <= gu:
+                        continue
+                    v = local_of.get(gv)
+                    if v is None:
+                        continue
+                    ge = (gu, gv)
+                    weight = self._global_edge_weights[ge]
+                    rows.extend((u, v)); cols.extend((v, u)); data.extend((weight, weight))
+                    edge_portals[(min(u, v), max(u, v))] = self._global_edge_portals[ge]
+            graph = sp.csr_matrix((data, (rows, cols)), shape=(len(tiles), len(tiles)))
+            dist, predecessors = sparse_dijkstra(graph, directed=False, return_predecessors=True)
+            dist = np.asarray(dist, dtype=float)
+            if not np.isfinite(dist).all():
+                raise AssertionError("Tile adjacency roadmap is disconnected")
+            return centers, dist, np.asarray(predecessors, dtype=np.int32), edge_portals
+
+        # Defensive fallback for direct/private use before global cache creation.
         centers = [np.array((t[0] + t[2] / 2, t[1] + t[3] / 2), dtype=float) for t in tiles]
         owner: Dict[Cell, int] = {}
         for i, t in enumerate(tiles):
-            for c in self._tile_cells(t):
-                owner[c] = i
+            x, y, w, h, _ = t
+            for px in range(x, x + w):
+                for py in range(y, y + h):
+                    owner[(px, py)] = i
         edge_weights: Dict[Tuple[int, int], float] = {}
         edge_portals: Dict[Tuple[int, int], np.ndarray] = {}
         for (x, y), i in owner.items():
@@ -453,7 +564,12 @@ class TileFirstMCPP:
                         portal = np.array((x + 0.5, y + 1.0))
                     else:
                         portal = np.array((x + 0.5, y + 0.0))
-                    weight = float(np.linalg.norm(centers[i] - portal) + np.linalg.norm(portal - centers[j]))
+                    ci = centers[i]
+                    cj = centers[j]
+                    weight = float(
+                        math.hypot(float(ci[0] - portal[0]), float(ci[1] - portal[1]))
+                        + math.hypot(float(portal[0] - cj[0]), float(portal[1] - cj[1]))
+                    )
                     if e not in edge_weights or weight < edge_weights[e]:
                         edge_weights[e] = weight
                         edge_portals[e] = portal
@@ -762,6 +878,49 @@ class TileFirstMCPP:
                     adjacency[b].add(a)
         self.tile_adjacency = adjacency
 
+        # Build immutable center/portal edge geometry once.  Iterate tiles/cells
+        # in the same order as _tile_geodesic_metric historically did, preserving
+        # strict '<' portal tie behavior exactly.
+        self._global_tile_index = {
+            (t[0], t[1], t[2], t[3]): i for i, t in enumerate(self.global_tiles)
+        }
+        self._global_centers = [
+            np.array((t[0] + t[2] / 2, t[1] + t[3] / 2), dtype=float)
+            for t in self.global_tiles
+        ]
+        owner_dict: Dict[Cell, int] = {}
+        for i, t in enumerate(self.global_tiles):
+            x, y, w, h, _ = t
+            for px in range(x, x + w):
+                for py in range(y, y + h):
+                    owner_dict[(px, py)] = i
+        edge_weights: Dict[Tuple[int, int], float] = {}
+        edge_portals: Dict[Tuple[int, int], np.ndarray] = {}
+        for (x, y), i in owner_dict.items():
+            for nb in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
+                j = owner_dict.get(nb)
+                if j is None or i == j:
+                    continue
+                e = (min(i, j), max(i, j))
+                if nb[0] == x + 1:
+                    portal = np.array((x + 1.0, y + 0.5))
+                elif nb[0] == x - 1:
+                    portal = np.array((x + 0.0, y + 0.5))
+                elif nb[1] == y + 1:
+                    portal = np.array((x + 0.5, y + 1.0))
+                else:
+                    portal = np.array((x + 0.5, y + 0.0))
+                ci, cj = self._global_centers[i], self._global_centers[j]
+                weight = float(
+                    math.hypot(float(ci[0] - portal[0]), float(ci[1] - portal[1]))
+                    + math.hypot(float(portal[0] - cj[0]), float(portal[1] - cj[1]))
+                )
+                if e not in edge_weights or weight < edge_weights[e]:
+                    edge_weights[e] = weight
+                    edge_portals[e] = portal
+        self._global_edge_weights = edge_weights
+        self._global_edge_portals = edge_portals
+
         # Exact cover of connected free space must induce a connected tile graph.
         seen = {0}
         q = deque([0])
@@ -783,7 +942,9 @@ class TileFirstMCPP:
         for u, nbs in enumerate(self.tile_adjacency):
             for v in nbs:
                 if u < v:
-                    w = float(np.linalg.norm(centers[u] - centers[v]))
+                    dx = float(centers[u][0] - centers[v][0])
+                    dy = float(centers[u][1] - centers[v][1])
+                    w = float(math.hypot(dx, dy))
                     rows.extend((u, v)); cols.extend((v, u)); data.extend((w, w))
         return sp.csr_matrix((data, (rows, cols)), shape=(len(centers), len(centers)))
 
@@ -846,7 +1007,9 @@ class TileFirstMCPP:
             seed = int(seeds[rid])
             for v in self.tile_adjacency[seed]:
                 if owners[v] < 0:
-                    cost = float(np.linalg.norm(centers[seed] - centers[v]))
+                    dx = float(centers[seed, 0] - centers[v, 0])
+                    dy = float(centers[seed, 1] - centers[v, 1])
+                    cost = float(math.hypot(dx, dy))
                     if cost < best_cost[rid, v]:
                         best_cost[rid, v] = cost
                         heapq.heappush(frontiers[rid], (cost, int(v)))
@@ -871,7 +1034,9 @@ class TileFirstMCPP:
             for v in self.tile_adjacency[u]:
                 if owners[v] >= 0:
                     continue
-                new_cost = cost + float(np.linalg.norm(centers[u] - centers[v]))
+                dx = float(centers[u, 0] - centers[v, 0])
+                dy = float(centers[u, 1] - centers[v, 1])
+                new_cost = cost + float(math.hypot(dx, dy))
                 if new_cost + 1e-12 < best_cost[rid, v]:
                     best_cost[rid, v] = new_cost
                     heapq.heappush(frontiers[rid], (new_cost, int(v)))
@@ -896,15 +1061,72 @@ class TileFirstMCPP:
         donor = int(owners[tid])
         if donor == receiver:
             return False
-        if np.count_nonzero(owners == donor) <= 1:
-            return False
         if not any(owners[v] == receiver for v in self.tile_adjacency[tid]):
             return False
-        trial = owners.copy()
-        trial[tid] = receiver
-        # Receiver stays connected because the moved tile touches it; the donor
-        # is the only side that can be disconnected by a one-tile transfer.
-        return self._tile_owner_connected(trial, donor)
+
+        # During one partition iteration the owner vector is immutable while many
+        # candidate tiles are queried.  A donor remains connected after deleting
+        # tid iff tid is not an articulation vertex of that donor's induced graph.
+        # Cache the exact articulation set once per donor/owner-vector instead of
+        # repeating a full BFS for every receiver candidate.
+        if self._transfer_cache_owners is not owners:
+            self._transfer_cache_owners = owners
+            self._transfer_articulations = {}
+            self._transfer_counts = {}
+
+        if donor not in self._transfer_articulations:
+            donor_nodes = np.flatnonzero(owners == donor)
+            count = int(len(donor_nodes))
+            self._transfer_counts[donor] = count
+            if count <= 2:
+                self._transfer_articulations[donor] = set()
+            else:
+                m = len(owners)
+                disc = np.full(m, -1, dtype=np.int32)
+                low = np.empty(m, dtype=np.int32)
+                parent = np.full(m, -1, dtype=np.int32)
+                child_count = np.zeros(m, dtype=np.int16)
+                articulation: set[int] = set()
+                tick = 0
+                donor_mask = owners == donor
+                for root_value in donor_nodes:
+                    root = int(root_value)
+                    if disc[root] >= 0:
+                        continue
+                    disc[root] = low[root] = tick
+                    tick += 1
+                    stack = [(root, iter(self.tile_adjacency[root]))]
+                    while stack:
+                        u, children = stack[-1]
+                        try:
+                            v = int(next(children))
+                        except StopIteration:
+                            stack.pop()
+                            p = int(parent[u])
+                            if p < 0:
+                                if child_count[u] > 1:
+                                    articulation.add(u)
+                            else:
+                                if low[u] < low[p]:
+                                    low[p] = low[u]
+                                if parent[p] >= 0 and low[u] >= disc[p]:
+                                    articulation.add(p)
+                            continue
+                        if not donor_mask[v]:
+                            continue
+                        if disc[v] < 0:
+                            parent[v] = u
+                            child_count[u] += 1
+                            disc[v] = low[v] = tick
+                            tick += 1
+                            stack.append((v, iter(self.tile_adjacency[v])))
+                        elif v != parent[u] and disc[v] < low[u]:
+                            low[u] = disc[v]
+                self._transfer_articulations[donor] = articulation
+
+        if self._transfer_counts[donor] <= 1:
+            return False
+        return tid not in self._transfer_articulations[donor]
 
     def _apply_tile_owners(self, owners: np.ndarray) -> None:
         self.tile_owners = np.asarray(owners, dtype=np.int16).copy()
@@ -928,6 +1150,81 @@ class TileFirstMCPP:
                 continue
             c = np.mean(cells, axis=0)
             self.centroids_xy.append((int(round(c[0])), int(round(c[1]))))
+
+    def _tile_geodesic_dist_only(self, tiles: List[Tile]) -> Tuple[List[np.ndarray], np.ndarray]:
+        """Distance-only twin of _tile_geodesic_metric for partition trial routes."""
+        if self._global_tile_index and len(self._global_centers) == len(self.global_tiles):
+            global_ids = [self._global_tile_index[(t[0], t[1], t[2], t[3])] for t in tiles]
+            local_of = {gid: i for i, gid in enumerate(global_ids)}
+            centers = [self._global_centers[gid] for gid in global_ids]
+            rows, cols, data = [], [], []
+            for gu in global_ids:
+                u = local_of[gu]
+                for gv in self.tile_adjacency[gu]:
+                    if gv <= gu:
+                        continue
+                    v = local_of.get(gv)
+                    if v is None:
+                        continue
+                    weight = self._global_edge_weights[(gu, gv)]
+                    rows.extend((u, v)); cols.extend((v, u)); data.extend((weight, weight))
+            graph = sp.csr_matrix((data, (rows, cols)), shape=(len(tiles), len(tiles)))
+            dist = np.asarray(sparse_dijkstra(graph, directed=False, return_predecessors=False), dtype=float)
+            if not np.isfinite(dist).all():
+                raise AssertionError("Tile adjacency roadmap is disconnected")
+            return centers, dist
+        centers, dist, _, _ = self._tile_geodesic_metric(tiles)
+        return centers, dist
+
+    def _route_trial_for_tiles(self, tiles: List[Tile]) -> dict:
+        """Exact partition-trial route objective without final geometric expansion."""
+        if len(tiles) <= 1:
+            return self._route_cycle_for_tiles(tiles)
+        centers, d = self._tile_geodesic_dist_only(tiles)
+        center_arr = np.asarray(centers)
+        start = int(np.argmin(np.linalg.norm(center_arr - center_arr.mean(axis=0), axis=1)))
+
+        nn_order = [start]
+        unused = np.ones(len(tiles), dtype=bool)
+        unused[start] = False
+        while unused.any():
+            costs = d[nn_order[-1]].copy()
+            costs[~unused] = np.inf
+            nxt = int(np.argmin(costs))
+            nn_order.append(nxt)
+            unused[nxt] = False
+        preorder, _, mst_weight = self._metric_mst_orders(d, start)
+        passes = 2 if len(tiles) > 1000 else 3
+        order_a = self._two_opt(nn_order.copy(), d, passes=passes)
+        order_b = self._two_opt(preorder.copy(), d, passes=passes)
+        length_a = self._tour_length(order_a, d)
+        length_b = self._tour_length(order_b, d)
+        if length_a == length_b:
+            # Preserve the original secondary mission-time tie-break exactly.
+            return self._route_cycle_for_tiles(tiles)
+        if length_a < length_b:
+            order, length = order_a, length_a
+        else:
+            order, length = order_b, length_b
+
+        marginal_costs: Dict[Tile, float] = {}
+        for pos, tile_index in enumerate(order):
+            previous = order[(pos - 1) % len(order)]
+            following = order[(pos + 1) % len(order)]
+            detour = d[previous, tile_index] + d[tile_index, following] - d[previous, following]
+            marginal_costs[tiles[tile_index]] = float(max(0.0, detour))
+        return {
+            "order": order,
+            "centers": [centers[i] for i in order],
+            "path": [],
+            "length": float(length),
+            "quarter_turns": 0.0,
+            "turn_time": 0.0,
+            "mission_time": float(self.service_time_per_tile * len(tiles) + length / self.robot_speed),
+            "double_tree_bound": float(2.0 * mst_weight),
+            "tile_marginal_costs": marginal_costs,
+            "routing_mode": "depot_free_metric_trial",
+        }
 
     def _route_cycle_for_tiles(self, tiles: List[Tile]) -> dict:
         if not tiles:
@@ -1307,8 +1604,8 @@ class TileFirstMCPP:
                     (t[0], t[1], t[2], t[3], receiver)
                     for i, t in enumerate(self.global_tiles) if trial[i] == receiver
                 ]
-                donor_route = self._route_cycle_for_tiles(donor_tiles)
-                receiver_route = self._route_cycle_for_tiles(receiver_tiles)
+                donor_route = self._route_trial_for_tiles(donor_tiles)
+                receiver_route = self._route_trial_for_tiles(receiver_tiles)
                 trial_lengths = lengths.copy()
                 trial_lengths[donor] = donor_route["length"]
                 trial_lengths[receiver] = receiver_route["length"]

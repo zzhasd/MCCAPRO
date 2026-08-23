@@ -1,4 +1,4 @@
-"""FACT-MCCA tile-first planner, v2.4.0.
+"""FACT-MCCA tile-first planner, v2.3.2.
 
 Current algorithm only:
 1. global free-space tiling (greedy/randomized + local exact MILP repair),
