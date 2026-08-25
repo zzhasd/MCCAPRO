@@ -1,3 +1,18 @@
+"""generate_target_points v1.2.0 - nearest robot cycle start
+
+版本说明（2026-08-22）
+1. 保持 mainline.py 生成的闭环几何路径和访问方向完全不变。
+2. 当调用 generate_target_points(..., current_pos=(x, y)) 时，
+   仅将闭环访问序列循环移位，使第 0 个目标点为离机器人当前位置最近的路径点。
+3. 旋转后仍保持首尾闭合，路径点数量不变。
+4. 若收到的 path 不是闭环，则为了避免人为制造“尾点 -> 原首点”的错误跳线，不做旋转并打印警告。
+5. 增加版本号和运行时起点选择日志，便于确认 Jetson 实际加载的是新版本。
+
+注意：本文件只调整闭环的访问起点，不重新规划路径，不改变路径线段，不改变环方向。
+"""
+
+__version__ = "1.2.0-nearest-robot-cycle-start"
+
 from time import sleep
 
 import yaml
@@ -13,6 +28,7 @@ import datetime
 import cv2                                  
 import scipy.sparse as sp                   
 from scipy.sparse.csgraph import dijkstra   
+from mainline import FACTMCCA  # 真机路径规划逻辑
 
 # =========================================================================================
 # 🌍 动态加载 YAML 配置文件
@@ -287,82 +303,140 @@ class GridFiller:
 def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robot_pos=None):
     """ 统一计算所有机器人的路径点序列，将结果存入数组，内部调用计算 """
     map_params = load_map_core_params(YAML_PATH, BASE_SIZE)
-    ox, oy, _ = map_params['origin']       
-    grid_reso = map_params['grid_reso']    
+    ox, oy, _ = map_params['origin']
+    grid_reso = map_params['grid_reso']
     resolution = map_params['resolution']
     orig_map_img = map_params['map_img'].copy()
     orig_h, orig_w = orig_map_img.shape
-    
-    # 移除PCA旋转相关代码，直接基于原图网格化
+
+    # 保留原地图读取和障碍物判定，仅将路径生成改为调用 mainline.py
     obstacle_grid = build_obstacle_grid(map_params, SAFETY_RADIUS_M)
-    
-    if robot_num > 1:
-        assignment_grid = partition_grid(obstacle_grid, robot_num, weights)
-    else:
-        assignment_grid = np.zeros_like(obstacle_grid)
-        assignment_grid[obstacle_grid == 1] = -1
+    grid_h, grid_w = obstacle_grid.shape
+
+    # 原文件是 [row, col] 且 row 向下；mainline 是 [x, y] 且 y 向上
+    obstacle_mask = np.flipud(obstacle_grid).T.astype(bool)
+
+    planner = FACTMCCA(
+        map_shape=(grid_w, grid_h),
+        robot_num=robot_num,
+        obstacle_mask=obstacle_mask,
+        robot_weights=weights,   # 新增这一行
+        tile_shapes=(
+            (4 * CELL_SIZE, 4 * CELL_SIZE),
+            (2 * CELL_SIZE, 4 * CELL_SIZE),
+            (4 * CELL_SIZE, 2 * CELL_SIZE),
+            (2 * CELL_SIZE, 2 * CELL_SIZE),
+            (1 * CELL_SIZE, 2 * CELL_SIZE),
+            (2 * CELL_SIZE, 1 * CELL_SIZE),
+        ),
+    )
+    planner.solve(method='tile_first')
 
     all_robot_goals = []
-    all_placed_blocks_data = [] 
-    all_mst_edges = []
+    all_placed_blocks_data = []
+    all_mst_edges = [[] for _ in range(robot_num)]
     all_sequences = []
 
-    for rid in range(robot_num):
-        robot_grid = obstacle_grid.copy()
-        robot_grid[assignment_grid != rid] = 1 
-        
-        filler = GridFiller(robot_grid, CELL_SIZE)
-        filler.fill_grid()
-        
-        world_points, block_world_centers = [], []
-        
-        for block in filler.placed_blocks:
-            # 获取块中心的像素坐标系下的U, V
-            px_u = (block['c'] + block['bw'] / 2.0) * BASE_SIZE
-            px_v = (block['r'] + block['bh'] / 2.0) * BASE_SIZE
-            
-            # 直接转换为 ROS Map 的真实物理世界坐标 (原点+偏移量)
-            # ROS坐标系中图片是从左下角作为世界坐标系基准(通常oy在图片最下方)
-            wx = ox + px_u * resolution
-            wy = oy + (orig_h - px_v) * resolution  
-            
-            world_points.append((wx, wy))
-            block_world_centers.append((wx, wy)) 
-            
-        all_placed_blocks_data.append((filler.placed_blocks, block_world_centers))
-            
-        if not world_points:
-            all_robot_goals.append([])
-            all_mst_edges.append([])
-            all_sequences.append([])
-            continue
-        
-        mst_edges = filler.calculate_mst(world_points)
-        all_mst_edges.append(mst_edges)
-        
-        adj = collections.defaultdict(list)
-        for p1, p2 in mst_edges:
-            adj[p1].append(p2)
-            adj[p2].append(p1)
-            
-        # 选择起点逻辑
-        if rid == query_robot_id and query_robot_pos is not None:
-            curr_x, curr_y = query_robot_pos
-            start_point = min(world_points, key=lambda p: math.hypot(p[0] - curr_x, p[1] - curr_y))
-        else:
-            start_point = min(world_points, key=lambda p: math.hypot(p[0], p[1]))
+    # 保持原 world 坐标换算；处理地图像素高度不能整除 BASE_SIZE 时的余量
+    y_world_offset = (orig_h - grid_h * BASE_SIZE) * resolution
 
-        sequence, visited = [], set()
-        
-        def stc_dfs(curr_pt):
-            visited.add(curr_pt)
-            sequence.append(curr_pt)
-            for neighbor in adj[curr_pt]:
-                if neighbor not in visited:
-                    stc_dfs(neighbor)
-                    sequence.append(curr_pt)
-                    
-        stc_dfs(start_point)
+    def to_world(point):
+        x, y = point
+        return (
+            ox + float(x) * grid_reso,
+            oy + y_world_offset + float(y) * grid_reso,
+        )
+
+    def rotate_closed_path(path, current_pos):
+        """
+        将闭环 path 的访问起点旋转到离 current_pos 最近的已有路径点。
+
+        重要约束：
+        - 只做循环移位，不改变闭环方向；
+        - 不增删中间路径点，不改变任何原有相邻线段；
+        - 闭环仍保持 path[0] == path[-1]；
+        - 非闭环路径不旋转，避免循环移位后人为产生跳线。
+        """
+        if not path or current_pos is None:
+            return list(path) if path else path
+
+        if len(current_pos) < 2:
+            raise ValueError(f"current_pos 格式错误，应至少包含 (x, y)，实际为: {current_pos}")
+
+        curr_x, curr_y = float(current_pos[0]), float(current_pos[1])
+        if not (math.isfinite(curr_x) and math.isfinite(curr_y)):
+            raise ValueError(f"current_pos 必须是有限坐标，实际为: {current_pos}")
+
+        if len(path) == 1:
+            return list(path)
+
+        closed = np.allclose(path[0], path[-1], atol=1e-9, rtol=0.0)
+        if not closed:
+            print(
+                "⚠️ [generate_target_points v1.2.0] 收到的 planner path 不是闭环，"
+                "为避免破坏原路径拓扑，本次不按机器人位置旋转起点。"
+            )
+            return list(path)
+
+        # 去掉末尾重复的闭环点，在唯一的环节点中找离机器人最近的那个点。
+        core = list(path[:-1])
+        if not core:
+            return list(path)
+
+        start_idx = min(
+            range(len(core)),
+            key=lambda i: (core[i][0] - curr_x) ** 2 + (core[i][1] - curr_y) ** 2,
+        )
+
+        original_start = core[0]
+        nearest_start = core[start_idx]
+        nearest_distance = math.hypot(nearest_start[0] - curr_x, nearest_start[1] - curr_y)
+
+        # 核心逻辑：循环移位。环上的点和边完全不变，只改变数组从哪里开始读。
+        rotated = core[start_idx:] + core[:start_idx]
+        rotated.append(rotated[0])
+
+        print(
+            f"✅ [generate_target_points v1.2.0] robot_pos=({curr_x:.3f}, {curr_y:.3f}), "
+            f"闭环起点 index {start_idx}/{len(core)-1}: "
+            f"({original_start[0]:.3f}, {original_start[1]:.3f}) -> "
+            f"({nearest_start[0]:.3f}, {nearest_start[1]:.3f}), "
+            f"distance={nearest_distance:.3f}m"
+        )
+        return rotated
+
+    # 只为沿用原可视化的方块颜色编号，不参与 mainline 规划
+    shape_to_bid = {
+        (4, 4): 6, (4, 2): 7, (2, 4): 8,
+        (2, 2): 2, (2, 1): 3, (1, 2): 4, (1, 1): 5,
+    }
+
+    for rid in range(robot_num):
+        robot_blocks = []
+        block_world_centers = []
+        for x, y, w, h, owner in planner.tiles:
+            if owner != rid:
+                continue
+
+            # 转回原可视化使用的 top-down block 表示
+            r = grid_h - (y + h)
+            c = x
+            base_h = max(1, int(round(h / max(CELL_SIZE, 1))))
+            base_w = max(1, int(round(w / max(CELL_SIZE, 1))))
+            bid = shape_to_bid.get((base_h, base_w), 5)
+            robot_blocks.append({'r': r, 'c': c, 'bh': h, 'bw': w, 'id': bid})
+            block_world_centers.append(to_world((x + w / 2.0, y + h / 2.0)))
+
+        all_placed_blocks_data.append((robot_blocks, block_world_centers))
+
+        sequence = [to_world(p) for p in planner.routes.get(rid, {}).get('path', [])]
+
+        # v1.2.0：路径环已经由 mainline 确定。这里只改变“从环上的哪个点开始访问”。
+        # 对当前查询机器人，选择离其 current_pos 最近的已有路径点作为 sequence[0]。
+        # 这是闭环数组的循环移位，不改变环方向、路径点集合或任何几何线段。
+        if rid == query_robot_id and query_robot_pos is not None:
+            sequence = rotate_closed_path(sequence, query_robot_pos)
+
         all_sequences.append(sequence)
 
         goal_points = []
@@ -370,9 +444,9 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
             x, y = sequence[i]
             yaw = math.atan2(sequence[i+1][1] - y, sequence[i+1][0] - x) if i < len(sequence)-1 else (goal_points[-1][2] if goal_points else 0.0)
             goal_points.append((round(x, 2), round(y, 2), round(yaw, 2)))
-        
+
         all_robot_goals.append(goal_points)
-    
+
     # --- 保存可视化图像 ---
     if IMAGE_DIR:
         plt.figure(figsize=(14, 12))
@@ -451,76 +525,119 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
 
 def generate_assignment_rectangles(weights: list) -> dict:
     """
-    计算当前权重下每台机器人被分配区域的矩形边框数据，供前端 HTML 叠加绘制。
-
-    返回格式：
-    {
-        "weights": [...],
-        "rects": [
-            [ {"rid": 0, "bid": 6, "x": ..., "y": ..., "w": ..., "h": ...}, ... ],
-            [ {"rid": 1, "bid": 6, "x": ..., "y": ..., "w": ..., "h": ...}, ... ]
-        ]
-    }
-
-    注意：这里只输出矩形几何信息，不输出 facecolor；前端只按轨迹颜色画浅色边框。
+    使用 mainline.FACTMCCA 生成与实际机器人规划完全一致的砖块，
+    转换为前端需要的 world 坐标矩形。
     """
-    weights_arr = np.array(weights, dtype=float)
+    weights_arr = np.asarray(weights, dtype=float)
     robot_num = len(weights_arr)
 
     if robot_num <= 0:
         return {"weights": [], "rects": []}
 
+    # 1. 加载地图
     map_params = load_map_core_params(YAML_PATH, BASE_SIZE)
-    ox, oy, _ = map_params['origin']
-    grid_reso = map_params['grid_reso']
-    resolution = map_params['resolution']
-    orig_h = map_params['map_img'].shape[0]
 
-    obstacle_grid = build_obstacle_grid(map_params, SAFETY_RADIUS_M)
+    ox, oy, _ = map_params["origin"]
+    resolution = map_params["resolution"]
+    grid_reso = map_params["grid_reso"]
 
-    if robot_num > 1:
-        assignment_grid = partition_grid(obstacle_grid, robot_num, weights_arr)
-    else:
-        assignment_grid = np.zeros_like(obstacle_grid)
-        assignment_grid[obstacle_grid == 1] = -1
+    orig_h = map_params["map_img"].shape[0]
 
-    rects_by_robot = []
+    # 2. 与 _compute_all_robot_goals() 完全相同的障碍物处理
+    obstacle_grid = build_obstacle_grid(
+        map_params,
+        SAFETY_RADIUS_M
+    )
 
-    for rid in range(robot_num):
-        robot_grid = obstacle_grid.copy()
-        robot_grid[assignment_grid != rid] = 1
+    grid_h, grid_w = obstacle_grid.shape
 
-        filler = GridFiller(robot_grid, CELL_SIZE)
-        filler.fill_grid()
+    # 原 grid: [row, col], row 向下
+    # mainline: [x, y], y 向上
+    obstacle_mask = np.flipud(obstacle_grid).T.astype(bool)
 
-        robot_rects = []
-        for block in filler.placed_blocks:
-            # 块中心像素坐标
-            px_u = (block['c'] + block['bw'] / 2.0) * BASE_SIZE
-            px_v = (block['r'] + block['bh'] / 2.0) * BASE_SIZE
+    # 3. 使用真正的新算法
+    planner = FACTMCCA(
+        map_shape=(grid_w, grid_h),
+        robot_num=robot_num,
+        obstacle_mask=obstacle_mask,
+        robot_weights=weights_arr,
+        tile_shapes=(
+            (4 * CELL_SIZE, 4 * CELL_SIZE),
+            (2 * CELL_SIZE, 4 * CELL_SIZE),
+            (4 * CELL_SIZE, 2 * CELL_SIZE),
+            (2 * CELL_SIZE, 2 * CELL_SIZE),
+            (1 * CELL_SIZE, 2 * CELL_SIZE),
+            (2 * CELL_SIZE, 1 * CELL_SIZE),
+        ),
+    )
 
-            # 转 ROS/world 坐标
-            wx = ox + px_u * resolution
-            wy = oy + (orig_h - px_v) * resolution
+    planner.solve(method="tile_first")
 
-            rect_w = block['bw'] * grid_reso
-            rect_h = block['bh'] * grid_reso
+    # 地图高度不能整除 BASE_SIZE 时，与目标点函数保持一致
+    y_world_offset = (
+        orig_h - grid_h * BASE_SIZE
+    ) * resolution
 
-            # 输出左下角 + 宽高，前端负责把 world 坐标转 canvas 像素坐标
-            robot_rects.append({
-                "rid": int(rid),
-                "bid": int(block['id']),
-                "x": round(wx - rect_w / 2.0, 4),
-                "y": round(wy - rect_h / 2.0, 4),
-                "w": round(rect_w, 4),
-                "h": round(rect_h, 4)
-            })
+    rects_by_robot = [
+        [] for _ in range(robot_num)
+    ]
 
-        rects_by_robot.append(robot_rects)
+    # 仅用于兼容现有 JSON；HTML 实际主要使用 x/y/w/h
+    shape_to_bid = {
+        (4, 4): 6,
+        (4, 2): 7,
+        (2, 4): 8,
+        (2, 2): 2,
+        (2, 1): 3,
+        (1, 2): 4,
+        (1, 1): 5,
+    }
+
+    # 4. 直接读取 mainline 最终砖块
+    for x, y, w, h, rid in planner.tiles:
+
+        if rid < 0 or rid >= robot_num:
+            continue
+
+        # planner.tiles 的 x/y 就是左下角网格坐标
+        wx = ox + float(x) * grid_reso
+        wy = (
+            oy
+            + y_world_offset
+            + float(y) * grid_reso
+        )
+
+        rect_w = float(w) * grid_reso
+        rect_h = float(h) * grid_reso
+
+        base_h = max(
+            1,
+            int(round(h / max(CELL_SIZE, 1)))
+        )
+        base_w = max(
+            1,
+            int(round(w / max(CELL_SIZE, 1)))
+        )
+
+        bid = shape_to_bid.get(
+            (base_h, base_w),
+            5
+        )
+
+        rects_by_robot[rid].append({
+            "rid": int(rid),
+            "bid": int(bid),
+            "x": round(wx, 4),
+            "y": round(wy, 4),
+            "w": round(rect_w, 4),
+            "h": round(rect_h, 4),
+        })
 
     return {
-        "weights": [float(w) for w in weights_arr],
-        "rects": rects_by_robot
+        "weights": [
+            float(w) for w in weights_arr
+        ],
+        "rects": rects_by_robot,
     }
 
 
@@ -528,6 +645,13 @@ def generate_assignment_rectangles(weights: list) -> dict:
 # 🚀 暴露给机器人的公共 API 
 # =========================================================================================
 def generate_target_points(robot_id: int, weights: list, current_pos: tuple = (0.0, 0.0)) -> list:
+    """
+    返回指定机器人的闭环目标点序列。
+
+    current_pos 应传入机器人的实时 world/ROS 坐标 (x, y)。
+    路径规划完成后，会把闭环序列旋转到离 current_pos 最近的路径点开始执行。
+    默认 (0.0, 0.0) 仅为兼容旧调用；真机运行建议始终显式传入机器人实时坐标。
+    """
     weights_arr = np.array(weights)
     robot_num = len(weights_arr)
     
@@ -543,24 +667,86 @@ def generate_target_points(robot_id: int, weights: list, current_pos: tuple = (0
 # 📝 测试用例
 # =========================================================================================
 if __name__ == '__main__':
+    print(f"📦 generate_target_points 版本: {__version__}")
     print("🚗 开始多机器人目标点分配测试...")
-    test_weights = [0.75, 0.25]
+
+    test_weights = [0.37, 0.63]
     test_robot_num = len(test_weights)
-    mock_current_positions = [(-1.5, -1.5), (-1.0, -1.0)]
-    
+
+    mock_current_positions = [
+        (-1.5, -1.5),
+        (-1.0, -1.0)
+    ]
+
     for i in range(test_robot_num):
         mock_pos = mock_current_positions[i]
-        my_target_points = generate_target_points(i, test_weights, mock_pos)
-        
+
+        my_target_points = generate_target_points(
+            i,
+            test_weights,
+            mock_pos
+        )
+
         if not my_target_points:
             print(f"\n⚠️ 机器人 {i} 未分配到有效目标点。")
             continue
-            
-        print(f"\n✅ 机器人 {i} 分配到目标点数量：{len(my_target_points)}")
-        start_pt = (my_target_points[0][0], my_target_points[0][1])
-        end_pt = (my_target_points[-1][0], my_target_points[-1][1])
-        print(f"   传入的当前坐标: {mock_pos} | 生成的起点坐标: {start_pt}")
-        print(f"   起点坐标: {start_pt} | 终点坐标: {end_pt} | 闭环是否重合: {start_pt == end_pt}")
-        print(f"   路径点序列前3个: {my_target_points[:3]} ... (省略中间) ... 结尾: {my_target_points[-1:]}")
-        print("\n" + "-"*60)
-        sleep(2)  # 模拟处理间隔
+
+        print(
+            f"\n✅ 机器人 {i} 分配到目标点数量："
+            f"{len(my_target_points)}"
+        )
+
+        start_pt = (
+            my_target_points[0][0],
+            my_target_points[0][1]
+        )
+
+        end_pt = (
+            my_target_points[-1][0],
+            my_target_points[-1][1]
+        )
+
+        # =====================================================
+        # 计算闭环路径总长度
+        # my_target_points 每个点格式为 (x, y, yaw)
+        # 这里只取前两个 x, y
+        # =====================================================
+        closed_path_length = 0.0
+
+        for j in range(len(my_target_points) - 1):
+            x1, y1 = my_target_points[j][:2]
+            x2, y2 = my_target_points[j + 1][:2]
+
+            closed_path_length += math.hypot(
+                x2 - x1,
+                y2 - y1
+            )
+
+        # =====================================================
+
+        print(
+            f"   传入的当前坐标: {mock_pos} "
+            f"| 生成的起点坐标: {start_pt}"
+        )
+
+        print(
+            f"   起点坐标: {start_pt} "
+            f"| 终点坐标: {end_pt} "
+            f"| 闭环是否重合: {start_pt == end_pt}"
+        )
+
+        print(
+            f"   🔄 闭环路径总长度: "
+            f"{closed_path_length:.3f} m"
+        )
+
+        print(
+            f"   路径点序列前3个: "
+            f"{my_target_points[:3]} "
+            f"... (省略中间) ... "
+            f"结尾: {my_target_points[-1:]}"
+        )
+
+        print("\n" + "-" * 60)
+
+        sleep(2)

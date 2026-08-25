@@ -34,10 +34,10 @@ app = Flask(__name__)
 # ================= 配置参数 =================
 PORT = 9999
 ROBOT_NUM = 2
-UPDATE_INTERVAL = 550.0  
+UPDATE_INTERVAL = 300.0  
 
 # ✨ 新增：自定义到期后的固定权重设定
-CUSTOM_WEIGHTS = [0.72, 0.28]
+CUSTOM_WEIGHTS = [0.37, 0.63]
 # [0.72, 0.28]  [0.37, 0.63]
 
 # ✨ 新增：机器车的扫地/巡检覆盖半径（单位：米）
