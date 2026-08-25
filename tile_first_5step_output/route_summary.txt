@@ -1,0 +1,109 @@
+Tile-First MCPP — 7-step demo
+============================================================
+Map: 8x8
+Robots: 3
+Random seed: 89
+Obstacles: 10
+Obstacle cells: [(0, 0), (0, 1), (1, 0), (1, 6), (4, 0), (4, 2), (5, 3), (5, 4), (5, 6), (5, 7)]
+Global tiles: 14
+Initial closed-tour CV: 0.458358
+Final closed-tour CV:   0.118407
+Accepted tile transfers: 1
+
+Robot 1
+  closed route length: 12.211834
+  path xy (first point == last point):
+    (5.000, 5.500)
+    (4.500, 5.000)
+    (4.500, 4.000)
+    (4.000, 3.500)
+    (2.000, 4.000)
+    (4.000, 5.500)
+    (5.000, 5.500)
+    (6.000, 5.500)
+    (7.000, 6.000)
+    (6.000, 5.500)
+    (5.000, 5.500)
+
+Robot 2
+  closed route length: 13.807159
+  path xy (first point == last point):
+    (5.000, 1.500)
+    (5.500, 1.000)
+    (5.500, 0.500)
+    (6.000, 0.500)
+    (7.000, 2.000)
+    (6.000, 2.500)
+    (5.500, 2.500)
+    (5.500, 2.000)
+    (5.000, 1.500)
+    (4.000, 1.500)
+    (3.000, 1.000)
+    (2.000, 1.500)
+    (1.500, 1.500)
+    (2.000, 1.500)
+    (3.000, 1.000)
+    (4.000, 1.500)
+    (5.000, 1.500)
+
+Robot 3
+  closed route length: 10.300563
+  path xy (first point == last point):
+    (3.000, 7.000)
+    (2.000, 7.500)
+    (1.000, 7.500)
+    (0.500, 7.000)
+    (0.500, 6.500)
+    (0.500, 7.000)
+    (1.000, 7.500)
+    (2.000, 7.500)
+    (3.000, 7.000)
+    (4.000, 6.500)
+    (4.500, 7.000)
+    (4.000, 6.500)
+    (3.000, 7.000)
+
+STEP 6 shortcut final paths
+------------------------------------------------------------
+Robot 1: 12.211834 -> 11.527856 (gain=0.683978, accepted/tested=6/6)
+    (5.000, 5.500)
+    (4.500, 4.000)
+    (2.000, 4.000)
+    (7.000, 6.000)
+    (5.000, 5.500)
+
+Robot 2: 13.807159 -> 13.081219 (gain=0.725940, accepted/tested=9/11)
+    (5.000, 1.500)
+    (5.500, 0.500)
+    (7.000, 2.000)
+    (5.500, 2.500)
+    (5.000, 1.500)
+    (1.500, 1.500)
+    (3.000, 1.000)
+    (5.000, 1.500)
+
+Robot 3: 10.300563 -> 9.333155 (gain=0.967408, accepted/tested=7/10)
+    (3.000, 7.000)
+    (1.000, 7.500)
+    (0.500, 6.500)
+    (1.000, 7.500)
+    (4.500, 7.000)
+    (3.000, 7.000)
+
+STEP 7 curved final closed loops with z-layer crossings
+------------------------------------------------------------
+Robot 1: shortcut=11.527856 -> curved=11.740810, pieces=4, safety_passes=0
+  crossing z-order: later traversal piece is drawn above earlier piece
+  tangent scales: [0.9, 0.9, 0.9, 0.9]
+  sampled points: 109
+
+Robot 2: shortcut=13.081219 -> curved=13.263389, pieces=7, safety_passes=0
+  crossing z-order: later traversal piece is drawn above earlier piece
+  tangent scales: [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9]
+  sampled points: 190
+
+Robot 3: shortcut=9.333155 -> curved=9.428093, pieces=5, safety_passes=0
+  crossing z-order: later traversal piece is drawn above earlier piece
+  tangent scales: [0.9, 0.9, 0.9, 0.9, 0.9]
+  sampled points: 136
+

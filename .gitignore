@@ -12,6 +12,7 @@ results_smoke/
 .external_baselines/
 
 # Reproducible lab outputs are timestamped and regenerated on demand.
+LAB_DATA/
 labA_*/
 labB_*/
 labC_*/
