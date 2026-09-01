@@ -14,7 +14,7 @@ paths:
   map_yaml:
     0: "/home/jetson/yahboomcar_ros2_ws/yahboomcar_ws/src/yahboomcar_nav/maps/yahboomcar.yaml"
     1: "/home/jetson/M3Pro_ws/install/M3Pro_navigation/share/M3Pro_navigation/map/yahboom_map.yaml"
-    2: "D:\\桌面\\MCCA-PRO\\real-lab\\maps\\yahboomcar_v3.yaml"
+    2: "D:\\桌面\\MCCA-PRO\\real-lab\\maps\\yahboomcar.yaml"
   
   image_dir:
     0: "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto"

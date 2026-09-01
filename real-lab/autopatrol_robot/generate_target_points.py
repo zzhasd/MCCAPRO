@@ -28,7 +28,10 @@ import datetime
 import cv2                                  
 import scipy.sparse as sp                   
 from scipy.sparse.csgraph import dijkstra   
-from mainline import FACTMCCA  # 真机路径规划逻辑
+try:
+    from .mainline import FACTMCCA
+except ImportError:
+    from mainline import FACTMCCA
 
 # =========================================================================================
 # 🌍 动态加载 YAML 配置文件

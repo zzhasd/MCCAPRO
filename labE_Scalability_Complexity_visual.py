@@ -180,13 +180,13 @@ def plot_from_log(log_file_path=None):
     cluster_means = [np.mean(d) for d in cluster_data]
 
     # 3. 开始绘图
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.1))
 
 
     x1 = np.array(space_maps)
     p1 = np.poly1d(np.polyfit(x1, np.array(space_means), 2))
     x1_fit = np.linspace(min(x1)-10, max(x1)+10, 100)
-    ax1.plot(x1_fit, p1(x1_fit), '--', color='#c0392b', alpha=0.8, linewidth=4, label='Mean Fit Curve (O(L^2))')
+    ax1.plot(x1_fit, p1(x1_fit), '--', color='#c0392b', alpha=0.8, linewidth=4, label='Quadratic fit')
 
     # -------- Space Graph (Boxplot + Quadratic Fit) --------
     ax1.boxplot(space_data, positions=space_maps, widths=8, patch_artist=True, showfliers=False,
@@ -194,7 +194,7 @@ def plot_from_log(log_file_path=None):
                 medianprops=dict(color='#e74c3c', linewidth=2))
 
     # 【修改2】将标题、x轴、y轴字体加粗 (添加 fontweight='bold')
-    ax1.set_title('Spatial Scalability\n (Computation Time vs. Map Size)', fontsize=25, fontweight='bold', pad=15)
+    # ax1.set_title('Spatial Scalability\n (Computation Time vs. Map Size)', fontsize=25, fontweight='bold', pad=15)
     ax1.set_xlabel('Map Size (L x L)', fontsize=25, fontweight='bold')
     ax1.set_ylabel('Computation Time (s)', fontsize=25, fontweight='bold')
 
@@ -217,7 +217,7 @@ def plot_from_log(log_file_path=None):
     x2 = np.array(cluster_robots)
     p2 = np.poly1d(np.polyfit(x2, np.array(cluster_means), 1))
     x2_fit = np.linspace(min(x2)-1, max(x2)+1, 100)
-    ax2.plot(x2_fit, p2(x2_fit), '--', color='#2980b9', alpha=0.8, linewidth=4, label='Mean Linear Fit (O(N))')
+    ax2.plot(x2_fit, p2(x2_fit), '--', color='#2980b9', alpha=0.8, linewidth=4, label='Linear fit')
 
         # -------- Cluster Graph (Boxplot + Linear Fit) --------
     ax2.boxplot(cluster_data, positions=cluster_robots, widths=0.8, patch_artist=True, showfliers=False,
@@ -225,7 +225,7 @@ def plot_from_log(log_file_path=None):
                 medianprops=dict(color='#3498db', linewidth=2))
 
     # 【修改2】将标题、x轴、y轴字体加粗
-    ax2.set_title('Swarm Scalability\n (Computation Time vs. Robot Num)', fontsize=25, fontweight='bold', pad=15)
+    # ax2.set_title('Swarm Scalability\n (Computation Time vs. Robot Num)', fontsize=25, fontweight='bold', pad=15)
     ax2.set_xlabel('Number of Robots (N)', fontsize=25, fontweight='bold')
     ax2.set_ylabel('Computation Time (s)', fontsize=25, fontweight='bold')
 
@@ -247,8 +247,13 @@ def plot_from_log(log_file_path=None):
 
     plt.tight_layout()
     output_img = os.path.join(base_dir, "Final_Performance_Report_Boxplot_EN.png")
+    output_pdf = os.path.join(base_dir, "Final_Performance_Report_Boxplot_EN.pdf")
+
     plt.savefig(output_img, dpi=200, bbox_inches='tight')
-    print(f"Success! Plot saved to: {output_img}")
+    plt.savefig(output_pdf, bbox_inches='tight')
+
+    print(f"Success! PNG saved to: {output_img}")
+    print(f"Success! PDF saved to: {output_pdf}")
 
 
 if __name__ == "__main__":

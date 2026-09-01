@@ -54,12 +54,12 @@ def run_visualization():
     mark_every = max(1, max_T // 25)
 
     # 【放大字体】全局主标题
-    fig.suptitle(
-        'Full Lifecycle Validation: Sensing, Estimation, and Execution',
-        fontsize=22,
-        fontweight='bold',
-        y=0.98
-    )
+    # fig.suptitle(
+    #     'Full Lifecycle Validation: Sensing, Estimation, and Execution',
+    #     fontsize=22,
+    #     fontweight='bold',
+    #     y=0.98
+    # )
 
     # --- Figure 1: Smoothed Noisy Sensor Input ---
     for i in range(robot_num):
@@ -84,7 +84,7 @@ def run_visualization():
         )
 
     # 【放大字体】Y轴标签和刻度
-    ax1.set_ylabel('(a) Sensed Vel.\n(cm/s)', fontsize=18, fontweight='bold')
+    ax1.set_ylabel('(a) Coverage \nThroughput(cm/s)', fontsize=18, fontweight='bold')
     ax1.axvline(x=50, color='gray', linestyle=':', linewidth=2)
     ax1.axvline(x=100, color='gray', linestyle=':', linewidth=2)
     plt.setp(ax1.get_yticklabels(), fontweight='bold', fontsize=14)
@@ -162,28 +162,31 @@ def run_visualization():
         legend_labels,
         loc='upper center',
         ncol=3,
-        bbox_to_anchor=(0.5, 0.93),
+        bbox_to_anchor=(0.5, 0.96),
         frameon=False,
         prop={'size': 16, 'weight': 'bold'},
-        labelspacing=0.2
+        labelspacing=0.2,
+        borderaxespad=0.0
     )
 
-    # 【微调间距】稍微增大 hspace，防止放大的字体互相重叠
+    # 【微调间距】保持宽度不变，缩小 legend 与主图之间的空白
     plt.subplots_adjust(
         hspace=0.15,
-        top=0.84,
+        top=0.92,
         bottom=0.1,
         left=0.12,
         right=0.95
     )
 
-    save_path = os.path.join(
-        output_dir,
-        'Full_Lifecycle_Validation_English_Compact_Bold_LineStyle_Marker.png'
-    )
+    base_name = 'Full_Lifecycle_Validation_English_Compact_Bold_LineStyle_Marker'
+    save_path_png = os.path.join(output_dir, f'{base_name}.png')
+    save_path_pdf = os.path.join(output_dir, f'{base_name}.pdf')
 
-    plt.savefig(save_path, dpi=300, bbox_inches='tight')
-    print(f"✅ 成功！带不同线型和点样式的总览图表已保存至: {save_path}")
+    # 同目录同时输出 PNG 与 PDF；pad_inches=0 去掉 legend 顶部额外白边
+    plt.savefig(save_path_png, dpi=300, bbox_inches='tight', pad_inches=0)
+    plt.savefig(save_path_pdf, bbox_inches='tight', pad_inches=0)
+    print(f"✅ 成功！PNG 图表已保存至: {save_path_png}")
+    print(f"✅ 成功！PDF 图表已保存至: {save_path_pdf}")
 
 
 if __name__ == '__main__':

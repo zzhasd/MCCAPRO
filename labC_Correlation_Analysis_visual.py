@@ -37,12 +37,12 @@ def plot_scatter_and_fit(ax, x_data, y_data, title, y_label, color, corr_val):
     z = np.polyfit(x_data, y_data, 1)
     p = np.poly1d(z)
     fit_x = np.linspace(min(x_data), max(x_data), 100)
-    ax.plot(fit_x, p(fit_x), color='red', linestyle='--', linewidth=2, label=f'Linear regression\n(y={z[0]:.2f}x+{z[1]:.2f})')
+    ax.plot(fit_x, p(fit_x), color='red', linestyle='--', linewidth=2, label=f'Linear regression\n(y={z[0]:.4f}x+{z[1]:.4f})')
     # Ideal line y=x
     ax.plot([0, max(x_data)], [0, max(x_data)], color='gray', linestyle=':', label='Ideal line (y=x)')
 
     # 【修改2】将标题、x轴、y轴字体加粗 (添加 fontweight='bold')，并适当放大了字号
-    ax.set_title(f'{title}\nPearson Correlation: {corr_val:.4f}', fontsize=25, fontweight='bold')
+    ax.set_title(f'Pearson Correlation: {corr_val:.4f}', fontsize=25, fontweight='bold')
     ax.set_xlabel('Target Weight Ratio', fontsize=25, fontweight='bold')
     ax.set_ylabel(y_label, fontsize=25, fontweight='bold')
 
@@ -54,14 +54,16 @@ def plot_scatter_and_fit(ax, x_data, y_data, title, y_label, color, corr_val):
     ax.grid(False)
 
     # 【修改3】将 legend 的字体加大并加粗 (添加 prop={'size': 12, 'weight': 'bold'})
-    ax.legend(loc='upper left',
-                prop={'size': 20, 'weight': 'bold'},
-                labelspacing=0.15,      # 每一项之间的垂直间距
-                handlelength=1.2,       # 图例线段长度
-                handletextpad=0.25,     # 图例符号和文字之间的距离
-                borderpad=0.1,          # legend 内边距
-                borderaxespad=0.1,      # legend 和坐标轴之间的距离
-              )
+    ax.legend(
+        loc='upper left',
+        prop={'size': 20, 'weight': 'bold'},
+        labelspacing=0.15,
+        handlelength=1.2,
+        handletextpad=0.25,
+        borderpad=0.1,
+        borderaxespad=0.1,
+        frameon=False
+    )
 
 
 def _get_lab_data_dir():
@@ -173,12 +175,12 @@ def run_visualization(csv_file=None):
     corr_path, p_path = pearsonr(X, Y_Path)
 
     if metric_kind == 'TSP':
-        path_title = 'Weight vs TSP Path Length'
-        path_ylabel = 'Actual TSP Path Length Ratio'
-        path_print = 'Weight vs TSP Path Length'
+        path_title = 'Weight vs Path Length'
+        path_ylabel = 'Actual Path Ratio'
+        path_print = 'Weight vs Path Length'
     else:
         path_title = 'Weight vs MST Length'
-        path_ylabel = 'Actual MST Length Ratio'
+        path_ylabel = 'Actual MST Ratio'
         path_print = 'Weight vs MST Length'
 
     print(f"\n📊 [Statistical Results]")
@@ -187,7 +189,7 @@ def run_visualization(csv_file=None):
 
     # ================= 绘制散点图与拟合回归线 =================
     print("📈 Generating plots...")
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.2))
 
     # Plot 1: Weight vs Area
     plot_scatter_and_fit(ax1, X, Y_Area, 'Weight vs Partition Area', 'Actual Area Ratio', '#3498db', corr_area)
@@ -198,9 +200,16 @@ def run_visualization(csv_file=None):
     plt.tight_layout()
 
     # Save the output figure using the CSV filename as base
-    output_img_name = os.path.splitext(csv_file)[0] + '.png'
+    output_base_name = os.path.splitext(csv_file)[0]
+
+    output_img_name = output_base_name + '.png'
+    output_pdf_name = output_base_name + '.pdf'
+
     plt.savefig(output_img_name, dpi=200, bbox_inches='tight')
-    print(f"✅ Visualization saved to '{output_img_name}'")
+    plt.savefig(output_pdf_name, bbox_inches='tight')
+
+    print(f"✅ PNG visualization saved to '{output_img_name}'")
+    print(f"✅ PDF visualization saved to '{output_pdf_name}'")
 
     plt.show()
 

@@ -23,3 +23,10 @@ results_*/
 results*.csv
 paper_figures/
 visualizations/
+
+labG-Comprehensive Comparison/outputs/
+labG-Comprehensive Comparison/third_party/
+
+logs/
+
+*.pdf

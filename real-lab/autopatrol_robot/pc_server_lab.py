@@ -34,14 +34,14 @@ app = Flask(__name__)
 # ================= 配置参数 =================
 PORT = 9999
 ROBOT_NUM = 2
-UPDATE_INTERVAL = 300.0  
+UPDATE_INTERVAL = 350.0  
 
 # ✨ 新增：自定义到期后的固定权重设定
-CUSTOM_WEIGHTS = [0.37, 0.63]
+CUSTOM_WEIGHTS = [0.72, 0.28]
 # [0.72, 0.28]  [0.37, 0.63]
 
 # ✨ 新增：机器车的扫地/巡检覆盖半径（单位：米）
-COVERAGE_RADIUS = 2.25   
+COVERAGE_RADIUS = 2.05   
 
 # 续航设定（秒）：可为每台机器人独立设置
 MAX_BATTERY_SEC_LIST = [60.0 * 60.0, 40.0 * 60.0]
@@ -55,8 +55,8 @@ if len(CUSTOM_WEIGHTS) < ROBOT_NUM:
     CUSTOM_WEIGHTS += [1.0 / ROBOT_NUM] * (ROBOT_NUM - len(CUSTOM_WEIGHTS))
 
 # ================= 地图配置 =================
-MAP_DIR = r"D:\桌面\Voronoi-and-Adaptive-Grid\real-lab\maps"
-MAP_YAML = "yahboomcar_v3.yaml"
+MAP_DIR = r"D:\桌面\MCCA-PRO\real-lab\maps"
+MAP_YAML = "yahboomcar.yaml"
 
 map_info = None
 map_image_bytes = None

@@ -74,6 +74,7 @@ RANDOM_SEED = 89       # Change ONLY this value to get a new obstacle layout,89
 
 # Same first-three robot colors as voronoi-Adapt-MST.py.
 ROBOT_COLORS = ["#FF6B6B", "#4ECDC4", "#45B7D1"]
+CURVED_ROUTE_COLORS = ["#C00000", "#3B5F21", "#2E54A1"]
 OBSTACLE_COLOR = "#000000"
 FREE_COLOR = "#FFFFFF"
 GRID_COLOR = "#252525"
@@ -1265,7 +1266,7 @@ def draw_base_grid(ax, owners: Optional[np.ndarray] = None, tiles: Optional[Sequ
                 edge = "black"
             elif (x, y) in cell_to_owner:
                 face = ROBOT_COLORS[cell_to_owner[(x, y)]]
-                alpha = 0.20
+                alpha = 0.35
                 edge = GRID_COLOR
             else:
                 face = FREE_COLOR
@@ -1290,7 +1291,7 @@ def draw_tile_boundaries(ax, tiles: Sequence[Tile], owners: Optional[np.ndarray]
             alpha = 0.36
         else:
             face = ROBOT_COLORS[int(owners[tid])]
-            alpha = 0.13
+            alpha = 0.20
         ax.add_patch(
             Rectangle(
                 (x, y), w, h,
@@ -1332,7 +1333,22 @@ def plot_step_01() -> Path:
 def plot_step_02(tiles: Sequence[Tile]) -> Path:
     fig, ax = new_square_figure()
     draw_base_grid(ax)
-    draw_tile_boundaries(ax, tiles, owners=None, linewidth=3.0)
+
+    # STEP 2 only: keep the neutral tile fill, then add a stronger dark-yellow
+    # skeleton on top.  Drawing the outline separately keeps it fully opaque
+    # instead of inheriting the semi-transparent tile fill alpha.
+    draw_tile_boundaries(ax, tiles, owners=None, linewidth=0.0)
+    for x, y, w, h in tiles:
+        ax.add_patch(
+            Rectangle(
+                (x, y), w, h,
+                facecolor="none",
+                edgecolor="#B8860B",  # dark yellow / dark goldenrod
+                linewidth=10,
+                zorder=5,
+            )
+        )
+
     centers = np.asarray([tile_center(t) for t in tiles])
     ax.scatter(centers[:, 0], centers[:, 1], s=28, facecolors="white", edgecolors="black", linewidths=1.1, zorder=8)
     stage_badge(ax, "STEP 2  Global Tile-first", f"exact cover | {len(tiles)} rectangles")
@@ -1465,21 +1481,6 @@ def _route_render_segments(route: Dict[str, object]) -> List[np.ndarray]:
 def draw_curved_routes(
     ax, curved_routes: Dict[int, Dict[str, object]], only_robot: Optional[int] = None
 ) -> None:
-    """Draw one continuous tube, then impose an explicit z-order at crossings.
-
-    Rendering has two layers:
-
-    1. A complete closed dark casing + colored center line is drawn first.  This
-       guarantees that the outside border is one continuous unbroken envelope.
-    2. The original Hermite pieces are redrawn in traversal order.  Every later
-       piece receives a larger zorder.  At a self-intersection, its solid casing
-       first covers the lower branch, then its colored center line is painted on
-       top, creating a clear over/under (bridge-like) relation.
-
-    Piece end caps use ``butt`` rather than ``round`` so redrawing a new z-layer
-    at a normal waypoint does not create dark circular blobs between pieces.
-    The low-z complete route underneath removes any possible antialias seam.
-    """
     for rid in range(ROBOT_NUM):
         if only_robot is not None and rid != only_robot:
             continue
@@ -1488,11 +1489,10 @@ def draw_curved_routes(
         if len(path) < 2:
             continue
 
-        outline_color = _darken_hex(ROBOT_COLORS[rid])
+        outline_color = _darken_hex(CURVED_ROUTE_COLORS[rid])
         segments = _route_render_segments(curved_routes[rid])
         robot_z_base = 20.0 + 10.0 * rid
 
-        # Complete unbroken tube underneath all crossing-specific layers.
         ax.plot(
             path[:, 0], path[:, 1],
             color=outline_color,
@@ -1504,7 +1504,7 @@ def draw_curved_routes(
         )
         ax.plot(
             path[:, 0], path[:, 1],
-            color=ROBOT_COLORS[rid],
+            color=CURVED_ROUTE_COLORS[rid],
             linewidth=CURVED_ROUTE_LINEWIDTH,
             linestyle="-",
             solid_capstyle="round",
@@ -1512,8 +1512,6 @@ def draw_curved_routes(
             zorder=robot_z_base + CURVED_ROUTE_Z_STEP,
         )
 
-        # Repaint each curve piece as a two-layer tube.  Later path pieces have
-        # higher zorder, hence visibly pass over earlier pieces at crossings.
         segment_z0 = robot_z_base + 2.0 * CURVED_ROUTE_Z_STEP
         for seg_index, seg in enumerate(segments):
             if len(seg) < 2:
@@ -1532,7 +1530,7 @@ def draw_curved_routes(
             )
             ax.plot(
                 seg[:, 0], seg[:, 1],
-                color=ROBOT_COLORS[rid],
+                color=CURVED_ROUTE_COLORS[rid],
                 linewidth=CURVED_ROUTE_LINEWIDTH,
                 linestyle="-",
                 solid_capstyle="butt",
@@ -1540,16 +1538,14 @@ def draw_curved_routes(
                 zorder=inner_z,
             )
 
-        # Start marker is always above the complete route.
-        marker_z = segment_z0 + (2 * len(segments) + 2) * CURVED_ROUTE_Z_STEP
         start = path[0]
         ax.scatter(
             [start[0]], [start[1]],
             s=34,
             facecolor="white",
-            edgecolor=ROBOT_COLORS[rid],
+            edgecolor=CURVED_ROUTE_COLORS[rid],
             linewidth=1.5,
-            zorder=marker_z,
+            zorder=100,
         )
 
 

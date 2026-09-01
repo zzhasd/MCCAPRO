@@ -112,6 +112,7 @@
         <div class="status-bar">
             <div class="status-item"><span id="txt-r0Data">📥 R0数据:</span> <b id="count-0">0</b></div>
             <div class="status-item"><span id="txt-r1Data">📥 R1数据:</span> <b id="count-1">0</b></div>
+            <div class="status-item"><span id="txt-runTime">🕒 运行时间:</span> <b id="run-time">0</b></div>
         </div>
         <div id="speed-chart"></div>
         <div class="weights-panel">
@@ -147,7 +148,7 @@
     <div class="panel right-panel">
         <h2 id="txt-titleMap" style="margin-bottom: 15px;">🗺️ 实时路径与巡检地图</h2>
         <div class="status-bar">
-            <div class="status-item"><span id="txt-runTime">🕒 运行时间:</span> <b id="run-time">0</b> s</div>
+            
             <div class="status-item highlight-cov"><span id="txt-coverage">🎯 全局覆盖率:</span> <b id="coverage-rate">0.00%</b></div>
         </div>
         <div class="map-square-box" id="map-square-box">
@@ -623,7 +624,7 @@
         let GH = GW / R;
         let H = GH + mHeight;
 
-        let maxH = window.innerHeight * 0.75;
+        let maxH = window.innerHeight * 0.65;
 
         if (H > maxH) {
             H = maxH;
