@@ -20,15 +20,26 @@ import os
 import csv
 import re
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy.stats import pearsonr
 import warnings
 
 warnings.filterwarnings('ignore')
 
-# Set font for visualization
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
-plt.rcParams['axes.unicode_minus'] = False
+# PaperPlaza/IEEE-safe PDF fonts: Type 42 TrueType, embedded by Matplotlib.
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'pdf.use14corefonts': False,
+    'ps.fonttype': 42,
+    'ps.useafm': False,
+    'text.usetex': False,
+    'font.family': 'DejaVu Sans',
+    'font.sans-serif': ['DejaVu Sans'],
+    'mathtext.fontset': 'dejavusans',
+    'axes.unicode_minus': False,
+})
 
 
 def plot_scatter_and_fit(ax, x_data, y_data, title, y_label, color, corr_val):

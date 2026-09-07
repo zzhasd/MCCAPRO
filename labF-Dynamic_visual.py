@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 from scipy.ndimage import gaussian_filter1d
@@ -10,9 +12,18 @@ from scipy.ndimage import gaussian_filter1d
 TARGET_CSV = "experiment_EMA_Simulation_20260825_162604.csv"
 # ==========================================
 
-# 移除中文字体，使用 matplotlib 默认的学术英文字体
-plt.rcParams['font.family'] = 'sans-serif'
-plt.rcParams['axes.unicode_minus'] = False
+# PaperPlaza/IEEE-safe PDF fonts: Type 42 TrueType, embedded by Matplotlib.
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'pdf.use14corefonts': False,
+    'ps.fonttype': 42,
+    'ps.useafm': False,
+    'text.usetex': False,
+    'font.family': 'DejaVu Sans',
+    'font.sans-serif': ['DejaVu Sans'],
+    'mathtext.fontset': 'dejavusans',
+    'axes.unicode_minus': False,
+})
 
 
 def run_visualization():

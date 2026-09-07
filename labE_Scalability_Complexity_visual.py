@@ -17,7 +17,23 @@ voronoi-Adapt-MST-labE-pro-visual.py.  The only workflow changes are:
 import os
 import re
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+
+# PaperPlaza/IEEE-safe PDF fonts: Type 42 TrueType, embedded by Matplotlib.
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'pdf.use14corefonts': False,
+    'ps.fonttype': 42,
+    'ps.useafm': False,
+    'text.usetex': False,
+    'font.family': 'DejaVu Sans',
+    'font.sans-serif': ['DejaVu Sans'],
+    'mathtext.fontset': 'dejavusans',
+    'axes.unicode_minus': False,
+})
 
 
 SPACE_MAPS = [25, 50, 75, 100, 125, 150, 175, 200]

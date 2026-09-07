@@ -1,12 +1,28 @@
 import os
 import re
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
 import numpy as np
 import matplotlib.patches as patches
 import matplotlib.lines as mlines  # 引入 mlines 用于创建自定义图例句柄
 from matplotlib.ticker import PercentFormatter, FuncFormatter
+
+
+# PaperPlaza/IEEE-safe PDF fonts: Type 42 TrueType, embedded by Matplotlib.
+plt.rcParams.update({
+    'pdf.fonttype': 42,
+    'pdf.use14corefonts': False,
+    'ps.fonttype': 42,
+    'ps.useafm': False,
+    'text.usetex': False,
+    'font.family': 'DejaVu Sans',
+    'font.sans-serif': ['DejaVu Sans'],
+    'mathtext.fontset': 'dejavusans',
+    'axes.unicode_minus': False,
+})
 
 
 # ================================
