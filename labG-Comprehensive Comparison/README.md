@@ -60,7 +60,8 @@ boustrophedon coverage with swath width `4`.
 
 ## Official GitHub Integration
 
-Official repositories are vendored under `third_party/official/`:
+External repositories are not included in the anonymous source distribution.
+The adapters look for separately installed repositories under `third_party/official/`:
 
 - `reso1/LS-MCPP`
 - `reso1/MSTC_Star`
@@ -69,8 +70,8 @@ Official repositories are vendored under `third_party/official/`:
 
 The experiment runner calls official MSTC*, official MFC, and official LS-MCPP
 when those folders are present. LS-MCPP needed a tiny NumPy-2 compatibility
-patch in its local-search sampling calls. Official MIP-MCPP is downloaded but
-requires Gurobi/`gurobipy` for same-map optimization, so it is recorded in the
+patch in its local-search sampling calls in the development environment. Official MIP-MCPP
+requires Gurobi/`gurobipy` for same-map optimization, so availability is recorded in the
 repository status but not reported through a local proxy row. Official DARP is
 Java GUI/class code; a headless Java runner can be added as the next bridge.
 

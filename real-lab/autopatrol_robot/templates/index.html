@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多机器人监控大屏</title>
+    <title>Multi-Robot Monitoring Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; margin: 0; }
         
-        /* 左右双栏布局 */
+        /* Two-column layout */
         .layout-wrapper { display: flex; gap: 20px; max-width: 1700px; margin: 0 auto; }
         .panel { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
         .left-panel { flex: 0 0 45%; display: flex; flex-direction: column; }
         .right-panel { flex: 1; display: flex; flex-direction: column; align-items: center; } 
         
-        /* 标题容器与中英文按钮 */
+        /* Title container and language button */
         .header-container { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 15px; }
         h2 { text-align: center; color: #1a1a1a; margin: 0; }
         .lang-btn { position: absolute; right: 0; padding: 6px 12px; font-size: 14px; font-weight: bold; color: #555; background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
@@ -24,7 +24,7 @@
         .status-item { font-size: 25px; color: #555; margin: 5px 10px; }
         .status-item b { color: #007bff; font-family: monospace; font-size: 28px; }
         
-        /* ✨ 覆盖率高亮 */
+        /* ✨ Highlight coverage */
         .highlight-cov b { color: #d9363e !important; font-size: 28px; } 
 
         #speed-chart { width: 100%; height: 450px; }
@@ -49,7 +49,7 @@
         .offline-btn:hover { background: #ff7875; }
         .offline-btn.active { background: #a8071a !important; border-color: #a8071a !important; cursor: not-allowed; }
 
-        /* ✨ 优化后的地图外框样式：取消强制正方形，让其自适应包裹内部图表 */
+        /* ✨ Map frame: remove the forced square shape and fit the enclosed chart */
         .map-square-box { 
             max-width: 100%; 
             background: #f0f2f5; 
@@ -72,7 +72,7 @@
             display: none; 
             z-index: 1;
         }
-        /* ✨ 新增覆盖率画布，绝对定位于地图层和Echarts层之间 */
+        /* ✨ New coverage canvas positioned between the map and ECharts layers */
         #coverage-canvas {
             position: absolute; 
             left: 55px; right: 30px; top: 40px; bottom: 50px;
@@ -94,45 +94,45 @@
 <div class="layout-wrapper">
     <div class="panel left-panel">
         <div class="header-container">
-            <h2 id="txt-titleMain">🚀 任务监控中心 (续航感知)</h2>
+            <h2 id="txt-titleMain">🚀 Mission Monitoring Center (Battery-Aware)</h2>
             <button class="lang-btn" onclick="toggleLang()">🌐 CN/EN</button>
         </div>
         <div class="status-bar">
-            <div class="status-item"><span id="txt-r0Data">📥 R0数据:</span> <b id="count-0">0</b></div>
-            <div class="status-item"><span id="txt-r1Data">📥 R1数据:</span> <b id="count-1">0</b></div>
+            <div class="status-item"><span id="txt-r0Data">📥 R0 Data:</span> <b id="count-0">0</b></div>
+            <div class="status-item"><span id="txt-r1Data">📥 R1 Data:</span> <b id="count-1">0</b></div>
         </div>
         <div id="speed-chart"></div>
         <div class="weights-panel">
             <div class="weight-card robot-0">
                 <div class="battery-box" id="bat-box-0">🔋 <span id="bat-0">100</span>%</div>
-                <span class="title" id="txt-r0Weight">R0 动态权重</span>
+                <span class="title" id="txt-r0Weight">R0 Dynamic Weight</span>
                 <div id="weight-0">0.500</div>
                 <div class="speed-panel">
-                    <button class="gear-btn offline-btn" id="btn-0--1" onclick="forceOffline(0)">强制下线</button>
-                    <button class="gear-btn danger" id="btn-0-0" onclick="changeSpeed(0, 0)">0 (停止)</button>
-                    <button class="gear-btn" id="btn-0-2" onclick="changeSpeed(0, 2)">2 (半速)</button>
-                    <button class="gear-btn" id="btn-0-4" onclick="changeSpeed(0, 4)">4 (全速)</button>
+                    <button class="gear-btn offline-btn" id="btn-0--1" onclick="forceOffline(0)">Force Offline</button>
+                    <button class="gear-btn danger" id="btn-0-0" onclick="changeSpeed(0, 0)">0 (Stop)</button>
+                    <button class="gear-btn" id="btn-0-2" onclick="changeSpeed(0, 2)">2 (Half Speed)</button>
+                    <button class="gear-btn" id="btn-0-4" onclick="changeSpeed(0, 4)">4 (Full Speed)</button>
                 </div>
             </div>
             <div class="weight-card robot-1">
                 <div class="battery-box" id="bat-box-1">🔋 <span id="bat-1">100</span>%</div>
-                <span class="title" id="txt-r1Weight">R1 动态权重</span>
+                <span class="title" id="txt-r1Weight">R1 Dynamic Weight</span>
                 <div id="weight-1">0.500</div>
                 <div class="speed-panel">
-                    <button class="gear-btn offline-btn" id="btn-1--1" onclick="forceOffline(1)">强制下线</button>
-                    <button class="gear-btn danger" id="btn-1-0" onclick="changeSpeed(1, 0)">0 (停止)</button>
-                    <button class="gear-btn" id="btn-1-2" onclick="changeSpeed(1, 2)">2 (半速)</button>
-                    <button class="gear-btn" id="btn-1-4" onclick="changeSpeed(1, 4)">4 (全速)</button>
+                    <button class="gear-btn offline-btn" id="btn-1--1" onclick="forceOffline(1)">Force Offline</button>
+                    <button class="gear-btn danger" id="btn-1-0" onclick="changeSpeed(1, 0)">0 (Stop)</button>
+                    <button class="gear-btn" id="btn-1-2" onclick="changeSpeed(1, 2)">2 (Half Speed)</button>
+                    <button class="gear-btn" id="btn-1-4" onclick="changeSpeed(1, 4)">4 (Full Speed)</button>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="panel right-panel">
-        <h2 id="txt-titleMap" style="margin-bottom: 15px;">🗺️ 实时路径与巡检地图</h2>
+        <h2 id="txt-titleMap" style="margin-bottom: 15px;">🗺️ Live Routes and Patrol Map</h2>
         <div class="status-bar">
-            <div class="status-item"><span id="txt-runTime">🕒 运行时间:</span> <b id="run-time">0</b> s</div>
-            <div class="status-item highlight-cov"><span id="txt-coverage">🎯 全局覆盖率:</span> <b id="coverage-rate">0.00%</b></div>
+            <div class="status-item"><span id="txt-runTime">🕒 Runtime:</span> <b id="run-time">0</b> s</div>
+            <div class="status-item highlight-cov"><span id="txt-coverage">🎯 Global Coverage:</span> <b id="coverage-rate">0.00%</b></div>
         </div>
         <div class="map-square-box" id="map-square-box">
             <div class="map-container-inner" id="map-container-inner">
@@ -145,16 +145,16 @@
 </div>
 
 <script>
-    // --- 多语言配置 ---
+    // --- Language settings ---
     const i18n = {
         CN: {
-            titleMain: "🚀 任务监控中心 (续航感知)", titleMap: "🗺️ 实时路径与巡检地图",
-            runTime: "🕒 运行时间:", r0Data: "📥 R0数据:", r1Data: "📥 R1数据:",
-            r0Weight: "R0 动态权重", r1Weight: "R1 动态权重", btnOffline: "强制下线",
-            btnStop: "0 (停止)", btnHalf: "2 (半速)", btnFull: "4 (全速)",
-            chartSpdLegend0: "R0 速度", chartSpdLegend1: "R1 速度", chartSpdX: "时间线", chartSpdY: "速度(m/s)",
-            chartMapPath0: "R0 轨迹", chartMapPath1: "R1 轨迹", chartMapCurr0: "R0 当前", chartMapCurr1: "R1 当前",
-            coverage: "🎯 全局覆盖率:"
+            titleMain: "🚀 Mission Monitoring Center (Battery-Aware)", titleMap: "🗺️ Live Routes and Patrol Map",
+            runTime: "🕒 Runtime:", r0Data: "📥 R0 Data:", r1Data: "📥 R1 Data:",
+            r0Weight: "R0 Dynamic Weight", r1Weight: "R1 Dynamic Weight", btnOffline: "Force Offline",
+            btnStop: "0 (Stop)", btnHalf: "2 (Half Speed)", btnFull: "4 (Full Speed)",
+            chartSpdLegend0: "R0 Speed", chartSpdLegend1: "R1 Speed", chartSpdX: "Timeline", chartSpdY: "Speed(m/s)",
+            chartMapPath0: "R0 Route", chartMapPath1: "R1 Route", chartMapCurr0: "R0 Current", chartMapCurr1: "R1 Current",
+            coverage: "🎯 Global Coverage:"
         },
         EN: {
             titleMain: "🚀 Task Monitor (Battery Aware)", titleMap: "🗺️ Real-time Path & Map",
@@ -204,13 +204,13 @@
     var speedChart = echarts.init(document.getElementById('speed-chart'));
     speedChart.setOption({
         tooltip: { trigger: 'axis' },
-        legend: { data: ['R0 速度', 'R1 速度'] },
+        legend: { data: ['R0 Speed', 'R1 Speed'] },
         grid: { left: '8%', right: '8%', bottom: '5%', top: '15%', containLabel: true },
-        xAxis: { type: 'category', name: '时间线', boundaryGap: false, data: Array.from({length: 20}, (_, i) => `T-${19-i}`) },
-        yAxis: { type: 'value', name: '速度(m/s)' },
+        xAxis: { type: 'category', name: 'Timeline', boundaryGap: false, data: Array.from({length: 20}, (_, i) => `T-${19-i}`) },
+        yAxis: { type: 'value', name: 'Speed(m/s)' },
         series: [
-            { name: 'R0 速度', type: 'line', smooth: true, symbolSize: 6, data: [], areaStyle: {opacity: 0.1} },
-            { name: 'R1 速度', type: 'line', smooth: true, symbolSize: 6, data: [], areaStyle: {opacity: 0.1} }
+            { name: 'R0 Speed', type: 'line', smooth: true, symbolSize: 6, data: [], areaStyle: {opacity: 0.1} },
+            { name: 'R1 Speed', type: 'line', smooth: true, symbolSize: 6, data: [], areaStyle: {opacity: 0.1} }
         ],
         animation: false 
     });
@@ -224,14 +224,14 @@
         xAxis: { type: 'value', name: 'X (m)', nameLocation: 'middle', nameGap: 25, splitLine: {show: false}, axisLine: { show: true, lineStyle: { type: 'dashed', opacity: 0.3 } }, axisLabel: { formatter: function (value) { return value.toFixed(1); } } },
         yAxis: { type: 'value', name: 'Y (m)', nameLocation: 'middle', nameGap: 30, splitLine: {show: false}, axisLine: { show: true, lineStyle: { type: 'dashed', opacity: 0.3 } }, axisLabel: { formatter: function (value) { return value.toFixed(1); } } },
         series: [
-            { name: 'R0 轨迹', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#5470c6', width: 2, opacity: 0.7 }, data: [] },
-            { name: 'R1 轨迹', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#91cc75', width: 2, opacity: 0.7 }, data: [] },
-            // ✨ 新增实体外部的覆盖光圈
-            { name: 'R0 半径', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 120, 120, 0.4)', borderColor: '#d9363e', borderWidth: 1 }, zlevel: 5, data: [], animation: false },
-            { name: 'R1 半径', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 120, 120, 0.4)', borderColor: '#d9363e', borderWidth: 1 }, zlevel: 5, data: [], animation: false },
+            { name: 'R0 Route', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#5470c6', width: 2, opacity: 0.7 }, data: [] },
+            { name: 'R1 Route', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#91cc75', width: 2, opacity: 0.7 }, data: [] },
+            // ✨ New coverage halo around the robot
+            { name: 'R0 Radius', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 120, 120, 0.4)', borderColor: '#d9363e', borderWidth: 1 }, zlevel: 5, data: [], animation: false },
+            { name: 'R1 Radius', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 120, 120, 0.4)', borderColor: '#d9363e', borderWidth: 1 }, zlevel: 5, data: [], animation: false },
             
-            { name: 'R0 当前', type: 'scatter', symbolSize: 12, itemStyle: { color: '#5470c6', borderColor: '#fff', borderWidth: 2 }, zlevel: 10, data: [] },
-            { name: 'R1 当前', type: 'scatter', symbolSize: 12, itemStyle: { color: '#91cc75', borderColor: '#fff', borderWidth: 2 }, zlevel: 10, data: [] }
+            { name: 'R0 Current', type: 'scatter', symbolSize: 12, itemStyle: { color: '#5470c6', borderColor: '#fff', borderWidth: 2 }, zlevel: 10, data: [] },
+            { name: 'R1 Current', type: 'scatter', symbolSize: 12, itemStyle: { color: '#91cc75', borderColor: '#fff', borderWidth: 2 }, zlevel: 10, data: [] }
         ],
         animation: false
     });
@@ -240,20 +240,20 @@
 
     let currentMapInfo = null;
     let mapInitialized = false;
-    let globalCoverageRadius = 0; // ✨ 保存从后端下发的半径配置
+    let globalCoverageRadius = 0; // ✨ Store the radius setting received from the backend
 
     // ==========================================
-    // ✨ 高性能 Canvas 像素级覆盖计算与渲染
+    // ✨ Efficient pixel-level coverage calculation and rendering on Canvas
     // ==========================================
     let imgWidth = 0, imgHeight = 0, mapResolution = 1.0;
-    let freeMask = null;       // 记录白色的原始底图（Uint8Array，1代表白色，0代表其他）
-    let coveredMask = null;    // 记录已经扫描过的像素
-    let totalFreePixels = 0;   // 白色总像素数
-    let coveredCount = 0;      // 已扫过的白色像素数
+    let freeMask = null;       // Store the original white map mask (Uint8Array: 1=white, 0=other)
+    let coveredMask = null;    // Track pixels already scanned
+    let totalFreePixels = 0;   // Total white pixels
+    let coveredCount = 0;      // Scanned white pixels
     let coverageCanvas = document.getElementById('coverage-canvas');
     let coverageCtx = coverageCanvas.getContext('2d', {willReadFrequently: true});
     let coverageImageData = null;
-    let parsedPathsIndex = [0, 0]; // 增量游标，记录每台车已经处理到了第几个点
+    let parsedPathsIndex = [0, 0]; // Incremental cursor tracking processed points for each robot
 
     function initCoverageCanvas(imgSrc, mapInfo) {
         let img = new Image();
@@ -262,7 +262,7 @@
             imgWidth = img.width; imgHeight = img.height;
             mapResolution = mapInfo.real_w / imgWidth;
             
-            // 设定画布分辨率严格与地图 PNG 尺寸对齐
+            // Match canvas resolution exactly to the map PNG dimensions
             coverageCanvas.width = imgWidth;
             coverageCanvas.height = imgHeight;
 
@@ -277,7 +277,7 @@
             coverageImageData = coverageCtx.createImageData(imgWidth, imgHeight);
             
             totalFreePixels = 0;
-            // 扫描白图（灰度值>240视为有效空地）
+            // Scan the white map (grayscale >240 counts as free space)
             for (let i = 0; i < pixels.length; i += 4) {
                 if (pixels[i] > 240 && pixels[i+1] > 240 && pixels[i+2] > 240) {
                     freeMask[i / 4] = 1; 
@@ -301,7 +301,7 @@
             let path = paths[rId];
             if (!path) continue;
             
-            // 仅对新收到的轨迹点进行增量运算，极其节省CPU
+            // Process only newly received trajectory points to conserve CPU
             for (let i = parsedPathsIndex[rId]; i < path.length; i++) {
                 let pt = path[i];
                 let px = Math.round((pt[0] - currentMapInfo.origin_x) / mapResolution);
@@ -313,12 +313,12 @@
                             let nx = px + dx, ny = py + dy;
                             if (nx >= 0 && nx < imgWidth && ny >= 0 && ny < imgHeight) {
                                 let idx = ny * imgWidth + nx;
-                                // 若为可通行白色区域，且尚未被覆盖
+                                // If the pixel is traversable white space and not yet covered
                                 if (freeMask[idx] === 1 && coveredMask[idx] === 0) {
                                     coveredMask[idx] = 1;
                                     coveredCount++;
                                     
-                                    // 给扫过的像素上浅红色 rgba(255,120,120, 160)
+                                    // Tint scanned pixels light red rgba(255,120,120, 160)
                                     let pixelIdx = idx * 4;
                                     imgDataArray[pixelIdx] = 255;
                                     imgDataArray[pixelIdx+1] = 120;
@@ -342,13 +342,13 @@
     }
     // ==========================================
 
-    // ✨ 核心修改点：重构地图自适应逻辑，紧贴地图实际比例
+    // ✨ Main change: make the map layout follow its actual aspect ratio
     function resizeMap() {
         if (!currentMapInfo) return;
         let inner = document.getElementById('map-container-inner');
         let panel = document.querySelector('.right-panel');
         
-        // 计算最大可用宽度 (减去 panel 的左右 padding 25px * 2)
+        // Compute maximum available width (subtract the left/right panel padding 25px * 2)
         let maxW = panel.clientWidth - 50; 
         if (maxW <= 0) return;
 
@@ -356,13 +356,13 @@
         let mWidth = mLeft + mRight;
         let mHeight = mTop + mBottom;
 
-        // 根据容器宽度计算出完美贴合的图表宽高
+        // Calculate chart dimensions to fit the container width
         let W = maxW;
         let GW = W - mWidth;         
         let GH = GW / R;             
         let H = GH + mHeight;        
 
-        // 限制最大高度，防止因为地图本身过高而撑破整个屏幕
+        // Limit maximum height so a tall map does not overflow the screen
         let maxH = window.innerHeight * 0.75; 
         if (H > maxH) {
             H = maxH;                   
@@ -371,7 +371,7 @@
             W = GW + mWidth;
         }
 
-        // 设置内部容器尺寸，外框将自然收缩并完美包裹它
+        // Set inner container dimensions so the outer frame fits naturally
         inner.style.width = W + 'px';
         inner.style.height = H + 'px';
         mapChart.resize();
@@ -387,7 +387,7 @@
                 document.getElementById('weight-0').innerText = data.weights[0].toFixed(3);
                 document.getElementById('weight-1').innerText = data.weights[1].toFixed(3);
 
-                // ✨ 获取后端的覆盖半径设置
+                // ✨ Get the coverage radius from the backend
                 if (data.coverage_radius) globalCoverageRadius = data.coverage_radius;
 
                 speedChart.setOption({ series: [{ data: data.histories[0] }, { data: data.histories[1] }] });
@@ -414,7 +414,7 @@
                             yAxis: { min: mi.origin_y, max: mi.origin_y + mi.real_h }
                         });
                         
-                        // ✨ 初始化 Canvas
+                        // ✨ Initialize Canvas
                         initCoverageCanvas('/map.png', mi);
                         mapInitialized = true;
                     }
@@ -427,22 +427,22 @@
                     let path0 = filterPath(data.paths[0] || []);
                     let path1 = filterPath(data.paths[1] || []);
                     
-                    // ✨ 实时绘制面积和更新覆盖率
+                    // ✨ Draw coverage and update its percentage in real time
                     updateCoverageArea([path0, path1]);
 
-                    // ✨ 计算当前坐标上的半透明圆圈尺寸（适配窗口缩放）
+                    // ✨ Calculate the translucent circle size at the current position (accounting for window scaling)
                     let dynamicSymbolSize = 0;
                     if (globalCoverageRadius > 0) {
                         let mapDom = document.getElementById('map-chart');
                         let echartGridPixelWidth = mapDom.clientWidth - mLeft - mRight; 
                         let pixelsPerMeter = echartGridPixelWidth / mi.real_w;
-                        dynamicSymbolSize = globalCoverageRadius * 2 * pixelsPerMeter; // 尺寸为直径
+                        dynamicSymbolSize = globalCoverageRadius * 2 * pixelsPerMeter; // Size is the diameter
                     }
 
                     let curr0 = path0.length > 0 ? [path0[path0.length - 1]] : [];
                     let curr1 = path1.length > 0 ? [path1[path1.length - 1]] : [];
 
-                    // 根据预留好的系列依次更新
+                    // Update the predefined series in order
                     mapChart.setOption({
                         series: [ 
                             { data: path0 }, 
@@ -455,7 +455,7 @@
                     });
                 }
             })
-            .catch(e => console.error("获取数据失败:", e));
+            .catch(e => console.error("Failed to fetch data:", e));
     }
 
     function changeSpeed(robotId, speed) {

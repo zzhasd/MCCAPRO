@@ -12,7 +12,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 warnings.filterwarnings('ignore')
 
-# 移除中文字体，使用 matplotlib 默认的学术英文字体
+# Use the default matplotlib English font instead of a CJK font
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -34,7 +34,7 @@ class DynamicMCPP_Weighted:
         self.robot_areas = np.zeros(self.robot_num)
         self.full_assignments = np.full(self.total_grids, -1, dtype=int)
         
-        # 初始化铺砖与MST需要的结构
+        # Initialize structures required for tiling and MST
         self.all_tiles = []
         self.tile_stats = {}
         self.robot_mst_dict = {}
@@ -101,7 +101,7 @@ class DynamicMCPP_Weighted:
         return centroids_xy
 
     def partition(self, max_iter=10):
-        # 强制每次都从固定且均匀的初始点开始计算，消除迟滞效应
+        # Always start from fixed, evenly spaced initial points to eliminate hysteresis
         centroids_xy = self.init_centroids()
             
         centroids = np.array([[x+0.5, y+0.5] for (x, y) in centroids_xy])
@@ -337,14 +337,14 @@ class DynamicMCPP_Weighted:
         plt.tight_layout()
         save_path = os.path.join(output_dir, f'Snapshot_{timestamp}_Step_{step}.png')
         plt.savefig(save_path, dpi=150, bbox_inches='tight', pad_inches=0.0)
-        print(f"\n📸 快照已保存: {save_path}")  # 在快照输出前加换行
+        print(f"\n📸 Snapshot saved: {save_path}")  # Add a newline before snapshot output
         plt.close()
 
 def run_dynamic_simulation():
     np.random.seed(42)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # 修改：直接输出到工作目录下的 labF-dynamic
+    # Change: write directly under the working directory to labF-dynamic
     output_dir = os.path.join('.', "labF-dynamic")
     os.makedirs(output_dir, exist_ok=True)
     
@@ -369,15 +369,15 @@ def run_dynamic_simulation():
         else:
             C_true_abs[t, 2] = 50.0  
             
-    # 用于收集每步的数据，输出CSV
+    # Collect data from each step and output CSV
     experiment_data = []
     
     print(f"🚀 Starting Dynamic Adaptive Simulation | Damping Factor α={alpha} | Time Steps={max_T}")
-    print(f"📁 结果将输出至目录: {output_dir}")
+    print(f"📁 Results will be written to: {output_dir}")
     
     for t in range(max_T):
-        # ✅ 这里添加了单行进度条，\r 回车符会让它在同一行不断覆盖刷新
-        print(f"\r⏳ 正在计算 Step {t+1}/{max_T} ...", end="", flush=True)
+        # ✅ Use a single-line progress bar; the \r carriage return updates the same line
+        print(f"\r⏳ Computing Step {t+1}/{max_T} ...", end="", flush=True)
         
         # 1. Add Gaussian noise to simulate sensor readings
         noise = np.random.normal(0, 2.0, robot_num)
@@ -393,17 +393,17 @@ def run_dynamic_simulation():
         # 4. Voronoi Partition
         solver.partition(max_iter=5)
 
-        # 4.1 记录分区面积占比
+        # 4.1 Record partition area fractions
         total_assigned_area = np.sum(solver.robot_areas)
         area_ratios = solver.robot_areas / (total_assigned_area + 1e-9)
         
-        # 5. 生成铺砖与计算 MST
+        # 5. Generate tiling and compute MST
         solver.generate_tiles_and_mst()
         
-        # 6. 记录 MST 长度
+        # 6. Record MST length
         mst_lengths = [solver.robot_mst_dict[i]['total_length'] for i in range(robot_num)]
 
-        # 收集此步数据
+        # Collect data for this step
         experiment_data.append({
             'Step': t,
             'Sensed_C_0': C_sampled_abs[0], 'Sensed_C_1': C_sampled_abs[1], 'Sensed_C_2': C_sampled_abs[2],
@@ -412,19 +412,19 @@ def run_dynamic_simulation():
             'Area_Ratio_0': area_ratios[0], 'Area_Ratio_1': area_ratios[1], 'Area_Ratio_2': area_ratios[2]
         })
 
-        # 7. 在指定时间步截取快照
+        # 7. Capture snapshots at the specified timesteps
         if t in [45, 60, 140]:
             solver.visualize(step=t, output_dir=output_dir, timestamp=timestamp)
-            # ✅ 为了防止被 "\r" 覆盖，截取快照后加一个空 print 换行
+            # ✅ Print a blank line after each snapshot to prevent overwriting by "\r"
             print()
 
-    # 循环结束后，将数据保存为 CSV
+    # After the loop, save data as CSV
     df = pd.DataFrame(experiment_data)
     csv_filename = f"experiment_EMA_Simulation_{timestamp}.csv"
     csv_filepath = os.path.join(output_dir, csv_filename)
     df.to_csv(csv_filepath, index=False)
     
-    print(f"\n✅ 实验运行完毕！实验数据已保存至: {csv_filepath}")
+    print(f"\n✅ Experiment complete! Data saved to: {csv_filepath}")
 
 if __name__ == '__main__':
     run_dynamic_simulation()

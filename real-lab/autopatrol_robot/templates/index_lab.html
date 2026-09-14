@@ -3,18 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>多机器人监控大屏</title>
+    <title>Multi-Robot Monitoring Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; margin: 0; }
         
-        /* 左右双栏布局 */
+        /* Two-column layout */
         .layout-wrapper { display: flex; gap: 20px; max-width: 1700px; margin: 0 auto; }
         .panel { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
         .left-panel { flex: 0 0 45%; display: flex; flex-direction: column; }
         .right-panel { flex: 1; display: flex; flex-direction: column; align-items: center; } 
         
-        /* 标题容器与中英文按钮 */
+        /* Title container and language button */
         .header-container { position: relative; width: 100%; display: flex; justify-content: center; align-items: center; margin-bottom: 15px; }
         h2 { text-align: center; color: #1a1a1a; margin: 0; }
         .lang-btn { position: absolute; right: 0; padding: 6px 12px; font-size: 14px; font-weight: bold; color: #555; background: #fff; border: 1px solid #d9d9d9; border-radius: 6px; cursor: pointer; transition: all 0.2s; }
@@ -24,24 +24,24 @@
         .status-item { font-size: 25px; color: #555; margin: 5px 10px; }
         .status-item b { color: #007bff; font-family: monospace; font-size: 28px; }
         
-        /* ✨ 覆盖率高亮 */
+        /* ✨ Highlight coverage */
         .highlight-cov b { color: #d9363e !important; font-size: 28px; } 
 
         #speed-chart { width: 100%; height: 450px; }
         
         .weights-panel { display: flex; justify-content: space-around; margin-top: 20px; padding: 10px; background: #f8f9fa; border-radius: 12px; border: 1px solid #eee; width: 100%; box-sizing: border-box;}
         
-        /* 修改：卡片不再使用相对定位，去除全局巨大的字体 */
+        /* Change: remove relative positioning from cards and the oversized global font */
         .weight-card { text-align: center; width: 45%; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
         .robot-0 { color: var(--robot-0-color, #5470c6); }
         .robot-1 { color: var(--robot-1-color, #d9363e); }
         
-        /* 新增：权重信息同行布局 (标识 | 权重 | 电池) */
+        /* New: show weight information on one line (ID | weight | battery) */
         .info-row { display: flex; justify-content: space-around; align-items: center; margin-bottom: 15px; }
         .rob-label { font-size: 26px; font-weight: bold; }
         .rob-weight { font-size: 38px; font-weight: bold;}
         
-        /* 修改：移除绝对定位，调大电量字体，使其融入 Flex 布局 */
+        /* Change: remove absolute positioning and enlarge battery text to fit the Flex layout */
         .battery-box { font-size: 20px; padding: 6px 12px; border-radius: 8px; background: #f0f2f5; color: #333; font-weight: bold;}
         .battery-low { background: #ffe5e5; color: #d9363e; }
         
@@ -89,7 +89,7 @@
             z-index: 2;
             opacity: 0.7;
         }
-        /* ✨ 分配区域边框层：地图之上、ECharts 轨迹层之下 */
+        /* ✨ Assigned-region border layer: above the map and below ECharts trajectories */
         #assignment-canvas {
             z-index: 3;
             opacity: 1;
@@ -106,13 +106,13 @@
 <div class="layout-wrapper">
     <div class="panel left-panel">
         <div class="header-container">
-            <h2 id="txt-titleMain">🚀 任务监控中心 (续航感知)</h2>
+            <h2 id="txt-titleMain">🚀 Mission Monitoring Center (Battery-Aware)</h2>
             <button class="lang-btn" onclick="toggleLang()">🌐 CN/EN</button>
         </div>
         <div class="status-bar">
-            <div class="status-item"><span id="txt-r0Data">📥 R0数据:</span> <b id="count-0">0</b></div>
-            <div class="status-item"><span id="txt-r1Data">📥 R1数据:</span> <b id="count-1">0</b></div>
-            <div class="status-item"><span id="txt-runTime">🕒 运行时间:</span> <b id="run-time">0</b></div>
+            <div class="status-item"><span id="txt-r0Data">📥 R0 Data:</span> <b id="count-0">0</b></div>
+            <div class="status-item"><span id="txt-r1Data">📥 R1 Data:</span> <b id="count-1">0</b></div>
+            <div class="status-item"><span id="txt-runTime">🕒 Runtime:</span> <b id="run-time">0</b></div>
         </div>
         <div id="speed-chart"></div>
         <div class="weights-panel">
@@ -123,10 +123,10 @@
                     <div class="battery-box" id="bat-box-0">🔋 <span id="bat-0">100</span>%</div>
                 </div>
                 <div class="speed-panel">
-                    <button class="gear-btn offline-btn" id="btn-0--1" onclick="forceOffline(0)">强制下线</button>
-                    <button class="gear-btn danger" id="btn-0-0" onclick="changeSpeed(0, 0)">0 (停止)</button>
-                    <button class="gear-btn" id="btn-0-2" onclick="changeSpeed(0, 2)">2 (半速)</button>
-                    <button class="gear-btn" id="btn-0-4" onclick="changeSpeed(0, 4)">4 (全速)</button>
+                    <button class="gear-btn offline-btn" id="btn-0--1" onclick="forceOffline(0)">Force Offline</button>
+                    <button class="gear-btn danger" id="btn-0-0" onclick="changeSpeed(0, 0)">0 (Stop)</button>
+                    <button class="gear-btn" id="btn-0-2" onclick="changeSpeed(0, 2)">2 (Half Speed)</button>
+                    <button class="gear-btn" id="btn-0-4" onclick="changeSpeed(0, 4)">4 (Full Speed)</button>
                 </div>
             </div>
             <div class="weight-card robot-1">
@@ -136,20 +136,20 @@
                     <div class="battery-box" id="bat-box-1">🔋 <span id="bat-1">100</span>%</div>
                 </div>
                 <div class="speed-panel">
-                    <button class="gear-btn offline-btn" id="btn-1--1" onclick="forceOffline(1)">强制下线</button>
-                    <button class="gear-btn danger" id="btn-1-0" onclick="changeSpeed(1, 0)">0 (停止)</button>
-                    <button class="gear-btn" id="btn-1-2" onclick="changeSpeed(1, 2)">2 (半速)</button>
-                    <button class="gear-btn" id="btn-1-4" onclick="changeSpeed(1, 4)">4 (全速)</button>
+                    <button class="gear-btn offline-btn" id="btn-1--1" onclick="forceOffline(1)">Force Offline</button>
+                    <button class="gear-btn danger" id="btn-1-0" onclick="changeSpeed(1, 0)">0 (Stop)</button>
+                    <button class="gear-btn" id="btn-1-2" onclick="changeSpeed(1, 2)">2 (Half Speed)</button>
+                    <button class="gear-btn" id="btn-1-4" onclick="changeSpeed(1, 4)">4 (Full Speed)</button>
                 </div>
             </div>
         </div>
     </div>
 
     <div class="panel right-panel">
-        <h2 id="txt-titleMap" style="margin-bottom: 15px;">🗺️ 实时路径与巡检地图</h2>
+        <h2 id="txt-titleMap" style="margin-bottom: 15px;">🗺️ Live Routes and Patrol Map</h2>
         <div class="status-bar">
             
-            <div class="status-item highlight-cov"><span id="txt-coverage">🎯 全局覆盖率:</span> <b id="coverage-rate">0.00%</b></div>
+            <div class="status-item highlight-cov"><span id="txt-coverage">🎯 Global Coverage:</span> <b id="coverage-rate">0.00%</b></div>
         </div>
         <div class="map-square-box" id="map-square-box">
             <div class="map-container-inner" id="map-container-inner">
@@ -163,15 +163,15 @@
 </div>
 
 <script>
-    // --- 多语言配置 ---
+    // --- Language settings ---
     const i18n = {
         CN: {
-            titleMain: "🚀 任务监控中心 (续航感知)", titleMap: "🗺️ 实时路径与巡检地图",
-            runTime: "🕒 运行时间:", r0Data: "📥 R0数据:", r1Data: "📥 R1数据:",
-            btnOffline: "强制下线",
-            btnStop: "0 (停止)", btnHalf: "2 (半速)", btnFull: "4 (全速)",
-            chartSpdLegend0: "R0 速度", chartSpdLegend1: "R1 速度", chartSpdX: "时间线", chartSpdY: "速度(m/s)",
-            coverage: "🎯 全局覆盖率:"
+            titleMain: "🚀 Mission Monitoring Center (Battery-Aware)", titleMap: "🗺️ Live Routes and Patrol Map",
+            runTime: "🕒 Runtime:", r0Data: "📥 R0 Data:", r1Data: "📥 R1 Data:",
+            btnOffline: "Force Offline",
+            btnStop: "0 (Stop)", btnHalf: "2 (Half Speed)", btnFull: "4 (Full Speed)",
+            chartSpdLegend0: "R0 Speed", chartSpdLegend1: "R1 Speed", chartSpdX: "Timeline", chartSpdY: "Speed(m/s)",
+            coverage: "🎯 Global Coverage:"
         },
         EN: {
             titleMain: "🚀 Task Monitor (Battery Aware)", titleMap: "🗺️ Real-time Path & Map",
@@ -226,24 +226,24 @@
     }
 
     // =========================
-    // 速度图
+    // Speed chart
     // =========================
     var speedChart = echarts.init(document.getElementById('speed-chart'));
 
     speedChart.setOption({
         tooltip: { trigger: 'axis' },
-        legend: { data: ['R0 速度', 'R1 速度'] },
+        legend: { data: ['R0 Speed', 'R1 Speed'] },
         grid: { left: '8%', right: '8%', bottom: '5%', top: '15%', containLabel: true },
         xAxis: {
             type: 'category',
-            name: '时间线',
+            name: 'Timeline',
             boundaryGap: false,
             data: Array.from({ length: 20 }, (_, i) => `T-${19 - i}`)
         },
-        yAxis: { type: 'value', name: '速度(m/s)' },
+        yAxis: { type: 'value', name: 'Speed(m/s)' },
         series: [
             {
-                name: 'R0 速度',
+                name: 'R0 Speed',
                 type: 'line',
                 smooth: true,
                 symbolSize: 6,
@@ -253,7 +253,7 @@
                 areaStyle: { opacity: 0.1, color: '#5470c6' }
             },
             {
-                name: 'R1 速度',
+                name: 'R1 Speed',
                 type: 'line',
                 smooth: true,
                 symbolSize: 6,
@@ -289,7 +289,7 @@
     }
 
     // =========================
-    // 地图 ECharts 层
+    // Map ECharts layer
     // =========================
     var mapChart = echarts.init(document.getElementById('map-chart'));
     let mLeft = 55, mRight = 30, mTop = 40, mBottom = 50;
@@ -341,17 +341,17 @@
             }
         },
         series: [
-            { name: 'R0 轨迹(旧)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#5470c6', width: 4, opacity: 1 }, data: [] },
-            { name: 'R1 轨迹(旧)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#d9363e', width: 4, opacity: 1 }, data: [] },
+            { name: 'R0 Route (old)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#5470c6', width: 4, opacity: 1 }, data: [] },
+            { name: 'R1 Route (old)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#d9363e', width: 4, opacity: 1 }, data: [] },
 
-            { name: 'R0 轨迹(新)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#fc8452', width: 4, opacity: 1 }, data: [] },
-            { name: 'R1 轨迹(新)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#91cc75', width: 4, opacity: 1 }, data: [] },
+            { name: 'R0 Route (new)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#fc8452', width: 4, opacity: 1 }, data: [] },
+            { name: 'R1 Route (new)', type: 'line', showSymbol: false, smooth: 0.3, lineStyle: { color: '#91cc75', width: 4, opacity: 1 }, data: [] },
 
-            { name: 'R0 半径', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 250, 180, 0.001)', borderColor: '#FFCC00', borderWidth: 4 }, zlevel: 5, data: [], animation: false },
-            { name: 'R1 半径', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 250, 180, 0.001)', borderColor: '#FFCC00', borderWidth: 4 }, zlevel: 5, data: [], animation: false },
+            { name: 'R0 Radius', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 250, 180, 0.001)', borderColor: '#FFCC00', borderWidth: 4 }, zlevel: 5, data: [], animation: false },
+            { name: 'R1 Radius', type: 'scatter', symbolSize: 0, itemStyle: { color: 'rgba(255, 250, 180, 0.001)', borderColor: '#FFCC00', borderWidth: 4 }, zlevel: 5, data: [], animation: false },
 
-            { name: 'R0 当前', type: 'scatter', symbolSize: 12, itemStyle: { color: '#5470c6', borderColor: '#fff', borderWidth: 4 }, zlevel: 10, data: [] },
-            { name: 'R1 当前', type: 'scatter', symbolSize: 12, itemStyle: { color: '#d9363e', borderColor: '#fff', borderWidth: 4 }, zlevel: 10, data: [] }
+            { name: 'R0 Current', type: 'scatter', symbolSize: 12, itemStyle: { color: '#5470c6', borderColor: '#fff', borderWidth: 4 }, zlevel: 10, data: [] },
+            { name: 'R1 Current', type: 'scatter', symbolSize: 12, itemStyle: { color: '#d9363e', borderColor: '#fff', borderWidth: 4 }, zlevel: 10, data: [] }
         ],
         animation: false
     });
@@ -363,7 +363,7 @@
     let globalCoverageRadius = 0;
 
     // ==========================================
-    // 高性能 Canvas 像素级覆盖计算与渲染
+    // Efficient pixel-level coverage calculation and rendering on Canvas
     // ==========================================
     let imgWidth = 0;
     let imgHeight = 0;
@@ -380,7 +380,7 @@
     let parsedPathsIndex = [0, 0];
 
     // ==========================================
-    // 分配区域边框层：只画 stroke，不画 facecolor
+    // Assigned-region border layer: draw only stroke, no facecolor
     // ==========================================
     let assignmentCanvas = document.getElementById('assignment-canvas');
     let assignmentCtx = assignmentCanvas.getContext('2d');
@@ -448,8 +448,8 @@
 
                 if (![x, y, w, h].every(Number.isFinite)) return;
 
-                // rect 是 world 坐标左下角 + 宽高；
-                // canvas 原点在图像左上角，因此 y 需要翻转。
+                // rect uses world-coordinate lower-left position plus width/height;
+                // canvas The origin is at the top-left of the image, so invert y.
                 const xPx = (x - currentMapInfo.origin_x) / mapResolution;
                 const yPx = imgHeight - ((y + h - currentMapInfo.origin_y) / mapResolution);
                 const wPx = w / mapResolution;
@@ -482,8 +482,8 @@
             latestAssignmentPayload.phase
         );
 
-        // 只有真正画成功了，才记录 drawKey。
-        // 避免图片还没加载完成时提前锁定，导致后续跳过绘制。
+        // Record the successful draw key only after rendering: drawKey.
+        // Avoid locking before the image loads, which would skip later rendering.
         if (ok) {
             lastAssignmentDrawKey = drawKey;
         }
@@ -502,7 +502,7 @@
             assignmentCanvas.width = imgWidth;
             assignmentCanvas.height = imgHeight;
 
-            // 设置 canvas width/height 会清空画布，所以必须允许后面强制重画。
+            // Setting canvas width/height clears it, so allow a forced redraw afterward.
             lastAssignmentDrawKey = null;
 
             let tempCanvas = document.createElement('canvas');
@@ -529,7 +529,7 @@
 
             parsedPathsIndex = [0, 0];
 
-            // 图片加载完成后强制画一次分配网格。
+            // Force one assigned-grid redraw after the image loads.
             maybeRedrawAssignmentRects(true);
         };
 
@@ -638,8 +638,8 @@
 
         mapChart.resize();
 
-        // resize 后 canvas 是 CSS 缩放，理论上不用重画；
-        // 这里强制一次，避免某些浏览器布局更新后边框没有刷新。
+        // resize only applies CSS scaling to the canvas, so a redraw is normally unnecessary;
+        // Force a redraw here to refresh borders after layout updates in some browsers.
         maybeRedrawAssignmentRects(true);
     }
 
@@ -716,7 +716,7 @@
                         applyPhaseRobotColors(currentGlobalPhase);
                         resetCoverageCanvas();
 
-                        // phase 切换时，强制清空旧边框并重画新权重边框。
+                        // phase On switching, clear old borders and redraw borders for the new weights.
                         lastAssignmentDrawKey = null;
                         maybeRedrawAssignmentRects(true);
                     } else {
@@ -794,7 +794,7 @@
                     });
                 }
             })
-            .catch(e => console.error("获取数据失败:", e));
+            .catch(e => console.error("Failed to fetch data:", e));
     }
 
     function changeSpeed(robotId, speed) {

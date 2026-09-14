@@ -22,7 +22,7 @@ SCHEME_SIMPLE = {
     8: (4, 4, '#9C9E09', '4x4')
 }
 
-# 定义您提供的50个随机种子
+# Define the 50 supplied random seeds
 EXPERIMENT_SEEDS = [
     42, 100, 256, 512, 1024, 2048, 4096, 8192, 12345, 99999,
     7, 13, 29, 63, 127, 255, 511, 777, 1337, 2024,
@@ -35,11 +35,11 @@ class GridFiller:
     def __init__(self, grid_size=10, obstacle_num=None, block_types=None, obstacle_positions=None, verbose=True):
         self.grid_size = grid_size
         self.verbose = verbose
-        # 初始化网格：0表示空，1表示障碍物，>=2表示已填充
+        # Initialize the grid: 0=empty, 1=obstacle, >=2=filled
         self.grid = np.zeros((grid_size, grid_size), dtype=int)
         if obstacle_num is None:
             obstacle_num = max(1, int(self.grid_size * self.grid_size * 0.1))
-        # 生成障碍物
+        # Generate obstacles
         if obstacle_positions is not None:
             self._apply_obstacles(obstacle_positions)
         else:
@@ -49,9 +49,9 @@ class GridFiller:
         self.block_types = block_types if block_types is not None else SCHEME_FULL
         
         if not self.block_types:
-            raise ValueError("block_types 不能为空，至少配置一种方块")
+            raise ValueError("block_types must not be empty; configure at least one tile type")
         if any(block_id <= 1 for block_id in self.block_types):
-            raise ValueError("方块编号必须大于1，编号1保留给障碍物")
+            raise ValueError("Tile IDs must exceed 1; ID 1 is reserved for obstacles")
             
         self.block_counts = {block_id: 0 for block_id in self.block_types}
         self.placed_blocks = []
@@ -241,15 +241,15 @@ def generate_obstacles_for_size(grid_size, obstacle_num, seed):
         obstacles.add((rng.randint(0, grid_size - 1), rng.randint(0, grid_size - 1)))
     return obstacles
 
-# 定义被多进程调用的单次实验任务
+# Define a single experiment task for multiprocessing
 def _run_single_experiment(args):
     grid_size, obstacle_ratio, seed = args
     obstacle_num = max(1, int(grid_size * grid_size * obstacle_ratio))
     
-    # 局部生成障碍物
+    # Generate obstacles locally
     obstacles = generate_obstacles_for_size(grid_size, obstacle_num, seed)
 
-    # 方案 A
+    # Scheme A
     filler_a = GridFiller(
         grid_size=grid_size, obstacle_num=obstacle_num, 
         block_types=SCHEME_FULL, obstacle_positions=obstacles, verbose=False
@@ -260,7 +260,7 @@ def _run_single_experiment(args):
     mst_a = filler_a.calculate_mst(filler_a.placed_blocks)[1]
     time_a = time.perf_counter() - start_a
 
-    # 方案 B
+    # Scheme B
     filler_b = GridFiller(
         grid_size=grid_size, obstacle_num=obstacle_num, 
         block_types=SCHEME_SIMPLE, obstacle_positions=obstacles, verbose=False
@@ -271,7 +271,7 @@ def _run_single_experiment(args):
     mst_b = filler_b.calculate_mst(filler_b.placed_blocks)[1]
     time_b = time.perf_counter() - start_b
 
-    # 传回所有统计数据
+    # Return all statistics
     return (blocks_a, mst_a, time_a, blocks_b, mst_b, time_b)
 
 
@@ -280,22 +280,22 @@ def run_experiment_for_ratio(min_size, max_size, step, obstacle_ratio, seeds_lis
     lines = ["grid_size,A_blocks,A_mst,A_time,B_blocks,B_mst,B_time"]
     num_experiments = len(seeds_list)
 
-    # 使用最大可能的 CPU 核心数，留一个核心防止系统卡顿
+    # Use as many CPU cores as possible, leaving one free to keep the system responsive
     max_workers = max(1, os.cpu_count() - 1)
 
     for grid_size in sizes:
         sum_blocks_a, sum_mst_a, sum_time_a = 0.0, 0.0, 0.0
         sum_blocks_b, sum_mst_b, sum_time_b = 0.0, 0.0, 0.0
 
-        # 打包任务参数
+        # Package task parameters
         tasks = [(grid_size, obstacle_ratio, seed) for seed in seeds_list]
 
-        # 启动多进程池
+        # Start the process pool
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-            # executor.map 会自动将任务分发给多个进程并行执行，并按顺序返回结果
+            # executor.map distributes tasks across processes and returns results in order
             results = list(executor.map(_run_single_experiment, tasks))
 
-        # 聚合该 grid_size 下所有进程返回的 50 次实验结果
+        # Aggregate the 50 experiment results returned by all processes for this grid_size
         for res in results:
             b_a, m_a, t_a, b_b, m_b, t_b = res
             sum_blocks_a += b_a
@@ -305,7 +305,7 @@ def run_experiment_for_ratio(min_size, max_size, step, obstacle_ratio, seeds_lis
             sum_mst_b += m_b
             sum_time_b += t_b
 
-        # 计算平均值
+        # Compute averages
         avg_blocks_a = sum_blocks_a / num_experiments
         avg_mst_a = sum_mst_a / num_experiments
         avg_time_a = sum_time_a / num_experiments
@@ -315,54 +315,54 @@ def run_experiment_for_ratio(min_size, max_size, step, obstacle_ratio, seeds_lis
         avg_time_b = sum_time_b / num_experiments
 
         print(
-            f"密度 {int(obstacle_ratio*100)}% | 网格 {grid_size}x{grid_size} (基于50个种子平均): "
-            f"A(铺砖={avg_blocks_a:.2f}, MST={avg_mst_a:.2f}, 时间={avg_time_a:.4f}s) | "
-            f"B(铺砖={avg_blocks_b:.2f}, MST={avg_mst_b:.2f}, 时间={avg_time_b:.4f}s)"
+            f"Density {int(obstacle_ratio*100)}% | Grid {grid_size}x{grid_size} (averaged over 50 seeds): "
+            f"A(Tiles={avg_blocks_a:.2f}, MST={avg_mst_a:.2f}, Time={avg_time_a:.4f}s) | "
+            f"B(Tiles={avg_blocks_b:.2f}, MST={avg_mst_b:.2f}, Time={avg_time_b:.4f}s)"
         )
         
         lines.append(f"{grid_size},{avg_blocks_a:.6f},{avg_mst_a:.6f},{avg_time_a:.6f},{avg_blocks_b:.6f},{avg_mst_b:.6f},{avg_time_b:.6f}")
 
     return "\n".join(lines)
 
-# 主程序
+# Main program
 if __name__ == "__main__":
-    # 多进程在 Windows 环境下必须在这个保护块内执行
-    # 参数设置
+    # On Windows, multiprocessing must run inside this guard
+    # Parameter settings
     min_size = 20
     max_size = 200
     step = 10
     
-    # 动态获取当前脚本所在目录作为输出路径
+    # Use the current script directory as the output path
     output_dir = os.path.dirname(os.path.abspath(__file__))
     if output_dir == "": 
         output_dir = "."
         
-    # 生成时间戳
+    # Generate a timestamp
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     file_path = os.path.join(output_dir, f'experiment_data_{timestamp}.txt')
     
-    # 自动循环运行 10%, 15%, 20%
+    # Automatically iterate over 10%, 15%, 20%
     ratios = [0.10, 0.15, 0.20]
     all_experiments_output = []
     
     for ratio in ratios:
         ratio_int = int(ratio * 100)
-        print(f"\n================ 开始运行障碍物密度 {ratio_int}% 的实验 (使用指定的50个种子) ================")
+        print(f"\n================ Starting experiments at obstacle density {ratio_int}% (using the specified 50 seeds) ================")
         
-        # 传入 EXPERIMENT_SEEDS 列表执行实验
+        # Run experiments with the EXPERIMENT_SEEDS list
         start_ratio_time = time.perf_counter()
         data_str = run_experiment_for_ratio(min_size, max_size, step, ratio, EXPERIMENT_SEEDS)
         end_ratio_time = time.perf_counter()
         
-        print(f"[{ratio_int}% 实验完成] 耗时: {end_ratio_time - start_ratio_time:.2f} 秒")
+        print(f"[{ratio_int}% experiments complete] Elapsed: {end_ratio_time - start_ratio_time:.2f} s")
         
-        # 拼接变量名格式
+        # Construct the variable name
         var_name = f"data_{ratio_int}_str"
         final_output = f'{var_name} = """\n{data_str}\n"""'
         all_experiments_output.append(final_output)
         
-    # 保存所有结果到同一个 txt 文件
+    # Save all results to the same txt file
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write("\n\n".join(all_experiments_output))
         
-    print(f"\n>> 所有实验完成！平均值数据已成功保存至: {file_path}")
+    print(f"\n>> All experiments complete! Averaged data saved to: {file_path}")

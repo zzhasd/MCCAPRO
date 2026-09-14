@@ -15,29 +15,32 @@ import scipy.sparse as sp
 from scipy.sparse.csgraph import dijkstra   
 
 # =========================================================================================
-# 🌍 动态加载 YAML 配置文件
+# 🌍 Load YAML configuration dynamically
 # =========================================================================================
-# 优先使用源码目录绝对路径，保证修改 yaml 后即时生效，免除重新 colcon build 的烦恼
-CONFIG_FILE_PATH = '/home/jetson/chapt7_ws/src/autopatrol_robot/autopatrol_robot/config.yaml'
+try:
+    from .runtime_config import config_file_path, load_config
+except ImportError:
+    from runtime_config import config_file_path, load_config
+
+CONFIG_FILE_PATH = str(config_file_path())
 
 def load_global_config():
     target_path = CONFIG_FILE_PATH
     if not os.path.exists(target_path):
-        # 兼容本地 Windows 测试：如果绝对路径不存在，则寻找当前目录下的 config.yaml
+        # Support local Windows testing: if the absolute path is missing, look beside this script for config.yaml
         target_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yaml')
         
     try:
-        with open(target_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-            print(f"读取yaml成功: {target_path}")
-            return config
+        config = load_config(target_path)
+        print(f"YAML loaded successfully: {target_path}")
+        return config
     except Exception as e:
-        print(f"⚠️ 读取yaml失败: {e}，将使用默认空配置")
+        print(f"⚠️ Failed to load YAML: {e}; using an empty default configuration")
         return {}
 
 global_config = load_global_config()
 
-# ====================== 从 YAML 提取配置 ======================
+# ====================== Extract settings from YAML ======================
 SELECT_CONFIG = global_config.get('select_config', 1)
 YAML_PATH = global_config.get('paths', {}).get('map_yaml', {}).get(SELECT_CONFIG, 'test_yaml')
 IMAGE_DIR = global_config.get('paths', {}).get('image_dir', {}).get(SELECT_CONFIG, '')
@@ -47,7 +50,7 @@ SAFETY_RADIUS_M = global_config.get('algorithm', {}).get('safety_radius_m', 0)
 WHITE_RATIO_THRESHOLD_CONFIG = global_config.get('algorithm', {}).get('white_ratio_threshold', 0.85)
 
 # =========================================================================================
-# 🛠️ 核心工具函数
+# 🛠️ Core helper functions
 # =========================================================================================
 def load_map_core_params(yaml_file, base_size):
     yaml_file = os.path.abspath(yaml_file)
@@ -61,7 +64,7 @@ def load_map_core_params(yaml_file, base_size):
     yaml_dir = os.path.dirname(yaml_file)
     pgm_path = os.path.join(yaml_dir, metadata['image'])
     if not os.path.exists(pgm_path):
-        raise FileNotFoundError(f"PGM文件不存在：{pgm_path}")
+        raise FileNotFoundError(f"PGM file does not exist: {pgm_path}")
     
     with open(pgm_path, 'rb') as f:
         f.readline()
@@ -89,7 +92,7 @@ def build_obstacle_grid(map_params, safety_radius_m):
     safe_thresh = map_params.get('safe_thresh', 0.9) 
     
     pixel_safe = int(safety_radius_m / map_params['resolution'])
-    WHITE_RATIO_THRESHOLD = WHITE_RATIO_THRESHOLD_CONFIG # 从全局配置读取
+    WHITE_RATIO_THRESHOLD = WHITE_RATIO_THRESHOLD_CONFIG # Read from the shared configuration
     
     obstacle_grid = np.zeros((grid_h, grid_w), dtype=int)
     for r in range(grid_h):
@@ -282,10 +285,10 @@ class GridFiller:
         return mst_edges
 
 # =========================================================================================
-# ⚙️ 核心内部执行函数（私有，不暴露给机器人调用）
+# ⚙️ Internal execution function (private; not exposed to robot callers)
 # =========================================================================================
 def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robot_pos=None):
-    """ 统一计算所有机器人的路径点序列，将结果存入数组，内部调用计算 """
+    """ Compute waypoint sequences for all robots, store results in an array, and invoke the internal computation """
     map_params = load_map_core_params(YAML_PATH, BASE_SIZE)
     ox, oy, _ = map_params['origin']       
     grid_reso = map_params['grid_reso']    
@@ -293,7 +296,7 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
     orig_map_img = map_params['map_img'].copy()
     orig_h, orig_w = orig_map_img.shape
     
-    # 移除PCA旋转相关代码，直接基于原图网格化
+    # Remove PCA rotation and discretize the original map directly
     obstacle_grid = build_obstacle_grid(map_params, SAFETY_RADIUS_M)
     
     if robot_num > 1:
@@ -317,12 +320,12 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
         world_points, block_world_centers = [], []
         
         for block in filler.placed_blocks:
-            # 获取块中心的像素坐标系下的U, V
+            # Get the tile center in pixel coordinates U, V
             px_u = (block['c'] + block['bw'] / 2.0) * BASE_SIZE
             px_v = (block['r'] + block['bh'] / 2.0) * BASE_SIZE
             
-            # 直接转换为 ROS Map 的真实物理世界坐标 (原点+偏移量)
-            # ROS坐标系中图片是从左下角作为世界坐标系基准(通常oy在图片最下方)
+            # Convert directly to ROS Map physical world coordinates (origin + offset)
+            # ROS uses the lower-left image corner as the world-coordinate reference (oy is usually at the image bottom)
             wx = ox + px_u * resolution
             wy = oy + (orig_h - px_v) * resolution  
             
@@ -345,7 +348,7 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
             adj[p1].append(p2)
             adj[p2].append(p1)
             
-        # 选择起点逻辑
+        # Start-point selection
         if rid == query_robot_id and query_robot_pos is not None:
             curr_x, curr_y = query_robot_pos
             start_point = min(world_points, key=lambda p: math.hypot(p[0] - curr_x, p[1] - curr_y))
@@ -373,14 +376,14 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
         
         all_robot_goals.append(goal_points)
     
-    # --- 保存可视化图像 ---
+    # --- Save the visualization image ---
     if IMAGE_DIR:
         plt.figure(figsize=(14, 12))
         plt.imshow(orig_map_img, cmap='gray', extent=[ox, ox + orig_w * resolution, oy, oy + orig_h * resolution])
         colors = ['yellow', 'cyan', 'lime', 'magenta', 'orange', 'pink', 'teal', 'purple']
         dummy_filler = GridFiller(np.zeros((1, 1)), CELL_SIZE) 
         
-        # 记录是否绘制了图例标签的标志，防止重复
+        # Track whether each legend label has been drawn to avoid duplicates
         legend_drawn = False
         
         for rid in range(robot_num):
@@ -389,7 +392,7 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
             for block, (wx, wy) in zip(blocks, centers):
                 bh, bw, bid = block['bh'], block['bw'], block['id']
                 rect_w, rect_h = bw * grid_reso, bh * grid_reso
-                # 直接添加方块不进行任何角度的倾斜变化
+                # Add tiles directly without any rotation
                 rect = patches.Rectangle((wx - rect_w/2, wy - rect_h/2), rect_w, rect_h,
                                          linewidth=2.5, edgecolor=edge_color,
                                          facecolor=dummy_filler.block_defs[bid][2], alpha=0.5)
@@ -402,28 +405,28 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
             if all_sequences[rid]:
                 seq_x, seq_y = [p[0] for p in all_sequences[rid]], [p[1] for p in all_sequences[rid]]
                 
-                # 新增：绘制绕树路径的连线（使用虚线连接所有路径点）
+                # New: draw tree-traversal path segments (connect all waypoints with dashed lines)
                 path_label = 'STC Path' if not legend_drawn else ""
                 plt.plot(seq_x, seq_y, color=edge_color, linestyle='--', linewidth=1.5, zorder=3, label=path_label)
                 
                 plt.scatter(seq_x, seq_y, c=edge_color, s=25, edgecolors='black', zorder=4)
                 
-                # 新增：标记路径点的访问顺序 (合并同一位置的多次访问序号，防重叠)
+                # New: label waypoint visit order (combine repeated visits at the same position to avoid overlap)
                 point_orders = collections.defaultdict(list)
                 for idx, (px, py) in enumerate(all_sequences[rid]):
                     point_orders[(px, py)].append(str(idx))
                 
                 for (px, py), orders in point_orders.items():
                     order_str = ",".join(orders)
-                    # 添加微小的偏移量避免被路径点挡住
+                    # Add a small offset so waypoint markers do not obscure labels
                     plt.text(px + 0.1, py + 0.1, order_str, color='black', fontsize=7, 
                              bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=0.3), zorder=5)
 
-                # 绘制 DFS 计算出的路线起点（红色星号）
+                # Draw the DFS route starting point (red star)
                 plt.scatter(seq_x[0], seq_y[0], c='red', s=150, marker='*', zorder=5, 
                             label='DFS Start Node' if not legend_drawn else "")
                 
-                # --- 绘制所有机器人的物理位置 ---
+                # --- Draw the physical positions of all robots ---
                 if rid == query_robot_id and query_robot_pos is not None:
                     curr_x, curr_y = query_robot_pos
                 else:
@@ -442,7 +445,7 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
         
         os.makedirs(IMAGE_DIR, exist_ok=True)
         save_path = os.path.join(IMAGE_DIR, f"multi_robot_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-        print(f"🔍 目标点分配与可视化已完成，保存至: {save_path}")
+        print(f"🔍 Target assignment and visualization complete; saved to: {save_path}")
         plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.close()
     
@@ -451,9 +454,9 @@ def _compute_all_robot_goals(robot_num, weights, query_robot_id=None, query_robo
 
 def generate_assignment_rectangles(weights: list) -> dict:
     """
-    计算当前权重下每台机器人被分配区域的矩形边框数据，供前端 HTML 叠加绘制。
+    Compute rectangular borders of robot regions under the current weights for HTML overlay rendering.
 
-    返回格式：
+    Return format:
     {
         "weights": [...],
         "rects": [
@@ -462,7 +465,7 @@ def generate_assignment_rectangles(weights: list) -> dict:
         ]
     }
 
-    注意：这里只输出矩形几何信息，不输出 facecolor；前端只按轨迹颜色画浅色边框。
+    Only output rectangle geometry, not facecolor; the frontend draws light borders using the route colors.
     """
     weights_arr = np.array(weights, dtype=float)
     robot_num = len(weights_arr)
@@ -495,18 +498,18 @@ def generate_assignment_rectangles(weights: list) -> dict:
 
         robot_rects = []
         for block in filler.placed_blocks:
-            # 块中心像素坐标
+            # Tile center in pixel coordinates
             px_u = (block['c'] + block['bw'] / 2.0) * BASE_SIZE
             px_v = (block['r'] + block['bh'] / 2.0) * BASE_SIZE
 
-            # 转 ROS/world 坐标
+            # Convert to ROS/world coordinates
             wx = ox + px_u * resolution
             wy = oy + (orig_h - px_v) * resolution
 
             rect_w = block['bw'] * grid_reso
             rect_h = block['bh'] * grid_reso
 
-            # 输出左下角 + 宽高，前端负责把 world 坐标转 canvas 像素坐标
+            # Output lower-left coordinates plus width/height; the frontend converts world coordinates to canvas pixels
             robot_rects.append({
                 "rid": int(rid),
                 "bid": int(block['id']),
@@ -525,14 +528,14 @@ def generate_assignment_rectangles(weights: list) -> dict:
 
 
 # =========================================================================================
-# 🚀 暴露给机器人的公共 API 
+# 🚀 Public robot API
 # =========================================================================================
 def generate_target_points(robot_id: int, weights: list, current_pos: tuple = (0.0, 0.0)) -> list:
     weights_arr = np.array(weights)
     robot_num = len(weights_arr)
     
     if not (0 <= robot_id < robot_num):
-        raise ValueError(f"提供的机器人编号有误: {robot_id}，根据权重推断系统共 {robot_num} 台机器人。")
+        raise ValueError(f"Invalid robot ID: {robot_id}; the weights indicate {robot_num} robots in the system.")
         
     all_goals = _compute_all_robot_goals(robot_num, weights_arr, robot_id, current_pos)
         
@@ -540,10 +543,10 @@ def generate_target_points(robot_id: int, weights: list, current_pos: tuple = (0
 
 
 # =========================================================================================
-# 📝 测试用例
+# 📝 Test cases
 # =========================================================================================
 if __name__ == '__main__':
-    print("🚗 开始多机器人目标点分配测试...")
+    print("🚗 Starting multi-robot target assignment test...")
     test_weights = [0.75, 0.25]
     test_robot_num = len(test_weights)
     mock_current_positions = [(-1.5, -1.5), (-1.0, -1.0)]
@@ -553,14 +556,14 @@ if __name__ == '__main__':
         my_target_points = generate_target_points(i, test_weights, mock_pos)
         
         if not my_target_points:
-            print(f"\n⚠️ 机器人 {i} 未分配到有效目标点。")
+            print(f"\n⚠️ Robot {i} has no valid assigned targets.")
             continue
             
-        print(f"\n✅ 机器人 {i} 分配到目标点数量：{len(my_target_points)}")
+        print(f"\n✅ Number of targets assigned to robot {i}: {len(my_target_points)}")
         start_pt = (my_target_points[0][0], my_target_points[0][1])
         end_pt = (my_target_points[-1][0], my_target_points[-1][1])
-        print(f"   传入的当前坐标: {mock_pos} | 生成的起点坐标: {start_pt}")
-        print(f"   起点坐标: {start_pt} | 终点坐标: {end_pt} | 闭环是否重合: {start_pt == end_pt}")
-        print(f"   路径点序列前3个: {my_target_points[:3]} ... (省略中间) ... 结尾: {my_target_points[-1:]}")
+        print(f"   Supplied current position: {mock_pos} | Generated start position: {start_pt}")
+        print(f"   Start position: {start_pt} | End position: {end_pt} | Path endpoints coincide: {start_pt == end_pt}")
+        print(f"   First 3 waypoints: {my_target_points[:3]} ... (intermediate points omitted) ... last: {my_target_points[-1:]}")
         print("\n" + "-"*60)
-        sleep(2)  # 模拟处理间隔
+        sleep(2)  # Simulated processing interval

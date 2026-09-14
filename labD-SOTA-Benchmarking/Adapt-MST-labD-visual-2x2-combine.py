@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import io
 import numpy as np
 import matplotlib.patches as patches
-import matplotlib.lines as mlines  # 引入 mlines 用于创建自定义图例句柄
+import matplotlib.lines as mlines  # Import mlines to create custom legend handles
 from matplotlib.ticker import PercentFormatter, FuncFormatter
 
 
@@ -26,16 +26,16 @@ plt.rcParams.update({
 
 
 # ================================
-# compare-grid.py：原有绘图逻辑合并到当前脚本
+# compare-grid.py: Merge the original plotting logic into this script
 # ================================
 def draw_single_grid(ax, custom_boxes, black_lines, scheme_name):
-    """在指定的子图 (ax) 上绘制单个网格世界"""
+    """Draw a single grid world on the specified subplot (ax)"""
     
-    # 1. 定义颜色映射与地图
+    # 1. Define the color mapping and map
     colors = {
-        0: [32/255, 118/255, 180/255],  # 蓝色 (真实地图障碍物)
-        1: [60/255, 15/255, 100/255],   # 紫色 (网格化障碍物)
-        2: [255/255, 235/255, 60/255]   # 黄色 (可通行区域)
+        0: [32/255, 118/255, 180/255],  # Blue (actual map obstacles)
+        1: [60/255, 15/255, 100/255],   # Purple (discretized obstacles)
+        2: [255/255, 235/255, 60/255]   # Yellow (traversable region)
     }
     
     grid_map = np.array([
@@ -46,13 +46,13 @@ def draw_single_grid(ax, custom_boxes, black_lines, scheme_name):
         [2, 2, 2, 1, 1, 1, 1, 1]
     ])
 
-    # 2. 向量化生成底图图像数据并绘制
+    # 2. Generate and render the base-map image using vectorized operations
     img = np.zeros((5, 8, 3))
     for key, color in colors.items():
         img[grid_map == key] = color
     ax.imshow(img, extent=[0, 8, 5, 0], zorder=1)
     
-    # 3. 绘制静态模拟障碍物 (批量添加)
+    # 3. Draw static simulated obstacles (add in a batch)
     obstacles = [
         patches.Circle((6.25, 0.25), 0.18, color='#2078B4', zorder=2),
         patches.Circle((6.95, 2.25), 0.18, color='#2078B4', zorder=2),
@@ -62,7 +62,7 @@ def draw_single_grid(ax, custom_boxes, black_lines, scheme_name):
     for obs in obstacles:
         ax.add_patch(obs)
 
-    # 4. 设置网格线
+    # 4. Configure grid lines
     ax.set_xticks(np.arange(0, 9, 1))
     ax.set_yticks(np.arange(0, 6, 1))
     ax.set_xticks(np.arange(0, 8.5, 0.5), minor=True)
@@ -70,9 +70,9 @@ def draw_single_grid(ax, custom_boxes, black_lines, scheme_name):
 
     ax.grid(which='major', color='#B0C460', linestyle='-', linewidth=2, zorder=5)
     ax.grid(which='minor', color='white', linestyle='--', linewidth=0.8, alpha=0.6, zorder=5)
-    ax.set_axisbelow(False) # 解除网格线被强制置底的限制
+    ax.set_axisbelow(False) # Allow grid lines to appear above other elements
 
-    # 5. 绘制收缩边框
+    # 5. Draw the contracted borders
     margin = 0.02 
     for cx, cy, w, h, color in custom_boxes:
         draw_w, draw_h = w - 2 * margin, h - 2 * margin
@@ -81,50 +81,50 @@ def draw_single_grid(ax, custom_boxes, black_lines, scheme_name):
             fill=False, edgecolor=color, linewidth=2, zorder=6
         ))
 
-    # 6. 绘制搜索树黑线、计算距离并绘制节点
+    # 6. Draw black search-tree edges, calculate distances, and draw nodes
     all_points = set()
     total_length = 0.0
     for p1, p2 in black_lines:
-        # 画线
+        # Draw edges
         ax.plot([p1[0], p2[0]], [p1[1], p2[1]], 'k-', linewidth=6.0, zorder=9)
-        # 收集端点
+        # Collect endpoints
         all_points.update([p1, p2])
-        # 累加长度
+        # Accumulate length
         total_length += np.hypot(p2[0] - p1[0], p2[1] - p1[1])
 
-    # 绘制连接处黑点
+    # Draw black dots at junctions
     for x, y in all_points:
         ax.plot(x, y, 'ko', markersize=12, zorder=10)
     
-    # 7. 隐藏坐标轴的标签，只保留网格
+    # 7. Hide axis labels and retain only the grid
     ax.tick_params(which='both', bottom=False, left=False, labelbottom=False, labelleft=False)
 
-    # ★★★ 8. 在中部顶部通过 legend 显示方案名称和总路径长度 ★★★
-    # 创建一条带黑色圆点的黑线作为图例的图标
+    # ★★★ 8. Show the scheme name and total path length in a top-center legend ★★★
+    # Use a black line with black circular markers as the legend handle
     legend_handle = mlines.Line2D([], [], color='k', marker='o', markersize=6, linewidth=2.5,
                                 label=f'{scheme_name}\nLength:{total_length:.2f}')
 
-    # 将图例放置在轴域的中部偏上，并将返回的图例对象赋值给变量
-    # 将图例放置在轴域的右下角，并添加控制紧凑度的参数
+    # Place the legend near the upper center of the axes and store the returned legend object
+    # Place the legend in the lower right and configure its spacing
     leg = ax.legend(handles=[legend_handle], 
                     loc='lower right', 
                     prop={'size': 35, 'weight': 'bold'}, 
                     framealpha=1.0,
-                    borderpad=0.2,       # 【关键】控制图例边框与内部内容之间的留白（默认 0.4）
-                    handlelength=1.0,    # 【关键】控制前面那根黑线（句柄）的长度（默认 2.0）
-                    handletextpad=0.4    # 【关键】控制黑线与文字之间的间距（默认 0.8）
+                    borderpad=0.2,       # [Key] Set the padding between the legend border and its contents (default 0.4)
+                    handlelength=1.0,    # [Key] Set the length of the black line handle (default 2.0)
+                    handletextpad=0.4    # [Key] Set the gap between the black line and text (default 0.8)
                    )
 
-    # 显式设置图例的 zorder 为 20，确保其悬浮在所有其他图形元素的最顶层
+    # Explicitly set the legend zorder to 20 so it appears above all other plot elements
     leg.set_zorder(20)
 
 
 def draw_grid_world_to_image():
-    """按 compare-grid.py 原有方式绘制，并直接返回内存中的 PNG 图像。"""
-    # 1. 修正画布比例：宽度8，高度10 (5*2)，使其与数据比例一致
+    """Draw using the original compare-grid.py method and return an in-memory PNG image."""
+    # 1. Correct the canvas aspect ratio: width 8, height 10 (5*2), matching the data
     compare_fig, compare_axes = plt.subplots(2, 1, figsize=(8, 10))
     
-    # --- 第一组数据 ---
+    # --- First dataset ---
     boxes_1 = [
         [6.5, 1.5, 1.0, 1.0, 'red'], [7.5, 1.5, 1.0, 1.0, 'red'],
         [7.5, 0.5, 1.0, 1.0, 'red'], [2.5, 3.5, 1.0, 1.0, 'red'],  
@@ -141,7 +141,7 @@ def draw_grid_world_to_image():
         [(7.5, 1.5), (7.5, 0.5)]
     ]
 
-    # --- 第二组数据 ---
+    # --- Second dataset ---
     boxes_2 = [
         [6.5, 1.5, 1.0, 1.0, 'red'],  
         [7.5, 1.0, 1.0, 2.0, 'green'],  
@@ -157,15 +157,15 @@ def draw_grid_world_to_image():
         [(5.0, 2.5), (6.5, 1.5)], [(6.5, 1.5), (7.5, 1.0)]
     ]
 
-    # 绘制两个子图
+    # Draw two subplots
     draw_single_grid(compare_axes[0], boxes_1, lines_1, "CPPF")
     draw_single_grid(compare_axes[1], boxes_2, lines_2, "MCCA")
 
-    # 1. 设置外边距 pad 为 0 去除四周白边，设置 h_pad 拉开上下子图的间距
-    # h_pad 的数值可以根据你的喜好调整，比如 1.5, 2.0, 3.0 等
+    # 1. Set outer padding pad to 0 to remove margins; use h_pad to separate the stacked subplots
+    # h_pad can be adjusted as needed, for example to 1.5, 2.0, or 3.0
     plt.tight_layout(pad=0, h_pad=0.5)
 
-    # 2. 保持 compare-grid.py 原有保存参数，但改为写入内存，不再生成/依赖 compare-grid.png
+    # 2. Keep the original compare-grid.py save settings, but write to memory instead of generating or requiring compare-grid.png
     compare_buffer = io.BytesIO()
     compare_fig.savefig(compare_buffer, format='png', dpi=200, bbox_inches='tight', pad_inches=0)
     compare_buffer.seek(0)
@@ -177,30 +177,30 @@ def draw_grid_world_to_image():
 
 
 # ================================
-# 1. 获取当前脚本所在的绝对目录并读取 txt 数据文件
+# 1. Get the current script directory and read the txt data file
 # ================================
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# ★★★ 在这里修改你的 txt 文件名 ★★★
+# ★★★ Set the txt filename here ★★★
 txt_filename = "experiment_data_20260502_nvidia.txt" 
 txt_filepath = os.path.join(script_dir, txt_filename)
 
 if not os.path.exists(txt_filepath):
-    raise FileNotFoundError(f"找不到数据文件: {txt_filepath}")
+    raise FileNotFoundError(f"Data file not found: {txt_filepath}")
 
 with open(txt_filepath, 'r', encoding='utf-8') as f:
     content = f.read()
 
-# 用正则表达式提取不同密度的 CSV 数据块
+# Extract CSV data blocks for each density using regular expressions
 match_10 = re.search(r'data_10_str\s*=\s*"""(.*?)"""', content, re.DOTALL)
 match_15 = re.search(r'data_15_str\s*=\s*"""(.*?)"""', content, re.DOTALL)
 match_20 = re.search(r'data_20_str\s*=\s*"""(.*?)"""', content, re.DOTALL)
 
 if not (match_10 and match_15 and match_20):
-    raise ValueError("无法从 txt 文件中提取到完整的数据，请确保它是用上一步的代码生成的正确格式！")
+    raise ValueError("Could not extract complete data from the txt file; ensure it uses the format generated by the preceding script!")
 
 # ================================
-# 2. 读取数据进入 pandas DataFrame
+# 2. Load data into pandas DataFrame
 # ================================
 df_10 = pd.read_csv(io.StringIO(match_10.group(1).strip()))
 df_15 = pd.read_csv(io.StringIO(match_15.group(1).strip()))
@@ -209,7 +209,7 @@ df_20 = pd.read_csv(io.StringIO(match_20.group(1).strip()))
 datasets = [("10% Obstacles", df_10), ("15% Obstacles", df_15), ("20% Obstacles", df_20)]
 
 # ================================
-# 3. 先按 compare-grid.py 原有逻辑生成右下角图片（内存），再设置主图样式
+# 3. First generate the lower-right image in memory using the original compare-grid.py logic, then configure the main figure style
 # ================================
 compare_img = draw_grid_world_to_image()
 
@@ -217,53 +217,53 @@ plt.style.use('seaborn-v0_8-whitegrid')
 colors = [ '#2ca02c', '#9467bd', '#ff7f0e','#1f77b4', '#d62728'] 
 
 # ================================
-# 4. 创建 2x2 Figure 和 Axes
+# 4. Create a 2x2 Figure and Axes
 # ================================
 fig, axes = plt.subplots(2, 2, figsize=(24, 20), sharey=True) 
 axes_flat = axes.flatten()
 
 # fig.suptitle("Reduction Rates of MCCA-Path vs CPPF on Grid Maps", fontsize=35, fontweight='bold', y=0.99)
 
-# ★★★ 定义次坐标轴格式化函数：将 1000 转换为 1k ★★★
+# ★★★ Define a secondary-axis formatter: convert 1000 to 1k ★★★
 def thousands_formatter(x, pos):
     if x == 0:
         return '0'
     return f'{int(x/1000)}k'
 
-# 准备用于保存全局图例内容的变量
+# Prepare variables for the shared legend
 global_lines = []
 global_labels = []
 
 # ================================
-# 5. 绘图与计算逻辑
+# 5. Plotting and calculation logic
 # ================================
 for i, (title, df) in enumerate(datasets):
     ax = axes_flat[i]
     ax.grid(False)
     
-    # 计算降低率（保留原有计算逻辑）
+    # Compute reduction rates (preserve the original calculation logic)
     time_reduction = (df['B_time'] - df['A_time']) / df['B_time'] * 100
     blocks_reduction = (df['B_blocks'] - df['A_blocks']) / df['B_blocks'] * 100
     mst_reduction = (df['B_mst'] - df['A_mst']) / df['B_mst'] * 100
     
-    # ===================== 主坐标轴(ax) 绘制 A_blocks/B_blocks =====================
-    # 绘制主坐标轴折线
+    # ===================== Draw on the primary axes (ax) A_blocks/B_blocks =====================
+    # Draw primary-axis line plots
     line4 = ax.plot(df['grid_size'], df['A_blocks'], marker='o', label='CPPF Blocks', 
             color=colors[3], linewidth=6, markersize=15, linestyle='--')
     line5 = ax.plot(df['grid_size'], df['B_blocks'], marker='o', label='MCCA Blocks', 
             color=colors[4], linewidth=6, markersize=15, linestyle='--')
 
-    # 主坐标轴X/Y轴设置
+    # Configure the primary X/Y axes
     ax.set_xlabel(f'Grid Size ({title})', fontsize=50, fontweight='bold')
-    ax.set_ylabel('Blocks Count', fontsize=50, fontweight='bold', color='black')  # 主Y轴标签
+    ax.set_ylabel('Blocks Count', fontsize=50, fontweight='bold', color='black')  # Primary Y-axis label
     ax.tick_params(axis='both', labelsize=50)
-    ax.yaxis.set_major_formatter(FuncFormatter(thousands_formatter))  # 主Y轴：千位分隔符
+    ax.yaxis.set_major_formatter(FuncFormatter(thousands_formatter))  # Primary Y axis: thousands separator
     
-    # ===================== 创建次坐标轴(ax_twin) 绘制三个降低率 =====================
+    # ===================== Create secondary axes (ax_twin) for the three reduction rates =====================
     ax_twin = ax.twinx()
     ax_twin.grid(False)
     
-    # 绘制次坐标轴折线
+    # Draw secondary-axis line plots
     line1 = ax_twin.plot(df['grid_size'], time_reduction, marker='s', label='Computation Time Reduction', 
             color=colors[0], linewidth=6, markersize=15, linestyle='-.')
     line2 = ax_twin.plot(df['grid_size'], blocks_reduction, marker='s', label='Blocks Number Reduction', 
@@ -271,30 +271,30 @@ for i, (title, df) in enumerate(datasets):
     line3 = ax_twin.plot(df['grid_size'], mst_reduction, marker='s', label='Path Length Reduction', 
             color=colors[2], linewidth=6, markersize=15, linestyle='-.')
     
-    # 次坐标轴Y轴设置 + 浅绿色样式
-    ax_twin.set_ylabel('Reduction Rate (%)', fontsize=50, fontweight='bold', color='green')  # 次Y轴标签
-    ax_twin.tick_params(axis='y', labelsize=50, labelcolor='green')  # 刻度文字绿色
-    ax_twin.yaxis.set_major_formatter(PercentFormatter())  # 次Y轴：百分比格式
-    # 次坐标轴右侧轴线设置为绿色
+    # Configure the secondary Y axis with a light-green style
+    ax_twin.set_ylabel('Reduction Rate (%)', fontsize=50, fontweight='bold', color='green')  # Secondary Y-axis label
+    ax_twin.tick_params(axis='y', labelsize=50, labelcolor='green')  # Green tick labels
+    ax_twin.yaxis.set_major_formatter(PercentFormatter())  # Secondary Y axis: percentage format
+    # Set the right spine of the secondary axes to green
     ax_twin.spines['right'].set_color('green')
 
-    # 将第一张图的线条和标签保存，用于在底部生成全局图例
+    # Save the lines and labels from the first plot for the shared bottom legend
     if i == 0:
         global_lines = line1 + line2 + line3 + line4 + line5
         global_labels = [l.get_label() for l in global_lines]
 
 # ================================
-# 6. 处理右下角并直接插入 compare-grid 绘图结果
+# 6. Handle the lower-right panel and insert the compare-grid plot directly
 # ================================
-# 先执行 tight_layout 以确定好所有 2x2 子图的最终正确位置
-# 加入 rect=[0, 0.08, 1, 1] 使得底部留出 8% 的空间给全局图例，防止重叠
+# Run tight_layout first to determine the final positions of all 2x2 subplots
+# Use rect=[0, 0.08, 1, 1] to reserve the bottom 8% for the shared legend and prevent overlap
 plt.tight_layout(rect=[0, 0.08, 1, 1])
 
-# 删除原有的第四个子图，彻底解除 sharey=True 的绑定
+# Remove the original fourth subplot to fully detach its sharey=True binding
 ax4 = axes_flat[3]
 ax4.remove()
 
-# ★★★ 核心修改部分：单个底部居中的全局图例，内部排成两列 ★★★
+# ★★★ Main change: one shared, bottom-centered legend arranged in two columns ★★★
 
 legend_kwargs = {
     'loc': 'lower center',
@@ -306,9 +306,9 @@ legend_kwargs = {
     'frameon': False
 }
 
-# ncol=2 会把 5 个 legend 排成两列：
-# 左列：前 3 个
-# 右列：后 2 个
+# ncol=2 arranges the 5 legend entries into two columns:
+# Left column: first 3 entries
+# Right column: last 2 entries
 fig.legend(
     global_lines,
     global_labels,
@@ -317,36 +317,36 @@ fig.legend(
     **legend_kwargs
 )
 
-# compare-grid 图片已经在内存中直接生成，不再检查/读取 compare-grid.png
+# compare-grid image already generated in memory; no longer check or read compare-grid.png
 img = compare_img
 
-# 获取图片原始像素尺寸，计算图片宽高比
+# Get the original image dimensions and calculate its aspect ratio
 img_h, img_w = img.shape[:2]
 img_aspect = img_w / img_h
 
-# 获取当前 Figure 的尺寸，计算 Figure 宽高比
+# Get the current Figure dimensions and calculate its aspect ratio
 fig_w, fig_h = fig.get_size_inches()
 fig_aspect = fig_w / fig_h
 
-# ★★★ 在这里自由设置图片的悬浮排布属性 ★★★
-# 注意由于图例在最底下，如果图片太靠下可能会和图例重叠，可以适当增加 img_bottom
-img_left = 0.57    # 距离画布左侧边缘的比例 (0~1)
-img_bottom = 0.09  # 距离画布底部边缘的比例 (0~1) 
-img_width = 0.30   # 图片占画布总宽度的比例 (0~1)
+# ★★★ Adjust the image placement here ★★★
+# The legend is at the bottom; placing the image too low may cause overlap, so increase img_bottom
+img_left = 0.57    # Fractional offset from the left edge of the canvas (0~1)
+img_bottom = 0.09  # Fractional offset from the bottom edge of the canvas (0~1)
+img_width = 0.30   # Fraction of the total canvas width occupied by the image (0~1)
 
-# 结合 Figure 和 Image 的比例，自动推算占画布的高度比例，以保证图片不被拉伸
+# Use the Figure and Image aspect ratios to calculate the relative image height without distortion
 img_height = (img_width / img_aspect) * fig_aspect
 
-# 使用自定义坐标和计算出的高度添加一个新的独立坐标轴
+# Add independent axes using the custom position and calculated height
 ax_img = fig.add_axes([img_left, img_bottom, img_width, img_height])
 
 ax_img.imshow(img)
 
-# 隐藏图片的边框和坐标轴刻度
+# Hide the image border and axis ticks
 ax_img.axis('off')
 
 # ================================
-# 7. 保存 PNG 和 PDF 文件
+# 7. Save PNG and PDF files
 # ================================
 output_png = os.path.join(script_dir, 'reduction_rates_2x2_with_bottom_legend.png')
 output_pdf = os.path.join(script_dir, 'reduction_rates_2x2_with_bottom_legend.pdf')

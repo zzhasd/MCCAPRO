@@ -52,19 +52,19 @@ def plot_scatter_and_fit(ax, x_data, y_data, title, y_label, color, corr_val):
     # Ideal line y=x
     ax.plot([0, max(x_data)], [0, max(x_data)], color='gray', linestyle=':', label='Ideal line (y=x)')
 
-    # 【修改2】将标题、x轴、y轴字体加粗 (添加 fontweight='bold')，并适当放大了字号
+    # [Change 2] Make the title and x/y-axis labels bold (add fontweight='bold') and increase the font size slightly
     ax.set_title(f'Pearson Correlation: {corr_val:.4f}', fontsize=25, fontweight='bold')
     ax.set_xlabel('Target Weight Ratio', fontsize=25, fontweight='bold')
     ax.set_ylabel(y_label, fontsize=25, fontweight='bold')
 
-    # 【补充修改】将坐标轴的刻度数字也加粗，保持整体视觉统一
+    # [Additional change] Bold the axis tick labels for a consistent appearance
     plt.setp(ax.get_xticklabels(), fontsize=20, fontweight='bold')
     plt.setp(ax.get_yticklabels(), fontsize=20, fontweight='bold')
 
-    # 【修改1】彻底不显示背景网格线
+    # [Change 1] Hide all background grid lines
     ax.grid(False)
 
-    # 【修改3】将 legend 的字体加大并加粗 (添加 prop={'size': 12, 'weight': 'bold'})
+    # [Change 3] Enlarge and bold the legend text (add prop={'size': 12, 'weight': 'bold'})
     ax.legend(
         loc='upper left',
         prop={'size': 20, 'weight': 'bold'},
@@ -198,7 +198,7 @@ def run_visualization(csv_file=None):
     print(f" -> Weight vs Partition Area | Pearson Correlation: {corr_area:.4f} (p-value: {p_area:.2e})")
     print(f" -> {path_print} | Pearson Correlation: {corr_path:.4f} (p-value: {p_path:.2e})\n")
 
-    # ================= 绘制散点图与拟合回归线 =================
+    # ================= Plot the scatter points and fitted regression line =================
     print("📈 Generating plots...")
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.2))
 

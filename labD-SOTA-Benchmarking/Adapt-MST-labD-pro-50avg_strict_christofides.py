@@ -20,7 +20,7 @@ except Exception:
     HAS_NETWORKX = False
 
 # ============================================================
-# 两种铺砖方案：A=SCHEME_FULL，B=SCHEME_SIMPLE
+# Two tiling schemes: A=SCHEME_FULL, B=SCHEME_SIMPLE
 # ============================================================
 SCHEME_FULL = {
     2: (2, 2, '#FF6B6B', '2x2'),
@@ -38,7 +38,7 @@ SCHEME_SIMPLE = {
     8: (4, 4, '#9C9E09', '4x4')
 }
 
-# 定义您提供的50个随机种子
+# Define the 50 supplied random seeds
 EXPERIMENT_SEEDS = [
     42, 100, 256, 512, 1024, 2048, 4096, 8192, 12345, 99999,
     7, 13, 29, 63, 127, 255, 511, 777, 1337, 2024,
@@ -48,21 +48,21 @@ EXPERIMENT_SEEDS = [
 ]
 
 # ============================================================
-# 新算法参数
+# New algorithm parameters
 # ============================================================
-# 铺砖：回退前=0-1整数规划MILP；回退后=4方向贪心。
+# Tiling: before fallback = 0-1 MILP; after fallback = four-direction greedy search.
 TILE_OPTIMIZER = "milp"
 ILP_TIME_LIMIT = 1.0
-# 大图MILP候选太多会导致内存/时间不可控；超过阈值时直接标记为“回退后”并使用贪心。
-# 如需强制尝试MILP，可调大下面两个阈值。
+# Too many MILP candidates on large maps can exhaust memory/time; above the thresholds, mark as "after fallback" and use greedy search.
+# Increase the following two thresholds to force a MILP attempt.
 TILE_MILP_MAX_CELLS = 2500
 TILE_MILP_MAX_CANDIDATES = 200000
 
-# TSP：严格按用户提供算法：
-# - 若砖块中心数 <= 80：尝试 连续避障距离矩阵 + MTZ精确TSP；
-# - 若砖块中心数 > 80：回退到 Christofides 近似TSP；
-# - 若60秒内精确求解失败或超时：回退到 Christofides 近似TSP。
-# 注意：Christofides 仍使用连续避障距离矩阵，不再加入 fast_sweep 或 fast_nearest_neighbor。
+# TSP: Strictly follow the supplied algorithm:
+# - For <= 80 tile centers: try the continuous obstacle-avoiding distance matrix + exact MTZ TSP;
+# - For > 80 tile centers: fall back to approximate Christofides TSP;
+# - If exact solving fails or times out within 60 seconds: fall back to approximate Christofides TSP.
+# Note: Christofides still uses the continuous obstacle-avoiding distance matrix; do not add fast_sweep or fast_nearest_neighbor.
 TSP_SOLVER = "exact_mtz"
 TSP_TIME_LIMIT = 60.0
 TSP_EXACT_MAX_POINTS = 80
@@ -75,22 +75,22 @@ AFTER_FALLBACK = "after_fallback"
 
 class GridFiller:
     """
-    实验流程保持原脚本形式：同样通过 GridFiller 生成指定障碍物下的铺砖结果。
+    Keep the original experiment workflow: use GridFiller to tile the specified obstacle map.
 
-    算法替换为：
-    1) 铺砖：优先使用0-1整数规划求最少砖数，失败/超阈值/无MILP时回退到四方向贪心；
-    2) 路径：砖块中心数<=80时优先使用连续避障距离矩阵 + MTZ精确TSP；点数>80或精确求解失败/超时时回退到Christofides。
+    Replace the algorithms with:
+    1) Tiling: first minimize the tile count using 0-1 integer programming; fall back to four-direction greedy search on failure, threshold violations, or unavailable MILP;
+    2) Routing: for <=80 tile centers, first use the continuous obstacle-avoiding distance matrix + exact MTZ TSP; for >80 points or exact-solver failure/timeout, fall back to Christofides.
 
-    标记规则：
-    - self.tile_stage == before_fallback：铺砖使用MILP结果；
-    - self.tile_stage == after_fallback ：铺砖使用贪心回退结果；
-    - TSP返回 tsp_stage == before_fallback：TSP使用精确MTZ结果；
-    - TSP返回 tsp_stage == after_fallback ：TSP使用Christofides回退结果。
+    Stage labels:
+    - self.tile_stage == before_fallback: tiling uses the MILP result;
+    - self.tile_stage == after_fallback : tiling uses the greedy fallback result;
+    - TSP returns tsp_stage == before_fallback: TSP uses the exact MTZ result;
+    - TSP returns tsp_stage == after_fallback: TSP uses the Christofides fallback result.
     """
     def __init__(self, grid_size=10, obstacle_num=None, block_types=None, obstacle_positions=None, verbose=True):
         self.grid_size = grid_size
         self.verbose = verbose
-        self.grid = np.zeros((grid_size, grid_size), dtype=int)  # 0=空，1=障碍物，>=2=已铺砖
+        self.grid = np.zeros((grid_size, grid_size), dtype=int)  # 0=empty, 1=obstacle, >=2=tiled
 
         if obstacle_num is None:
             obstacle_num = max(1, int(self.grid_size * self.grid_size * 0.1))
@@ -103,11 +103,11 @@ class GridFiller:
         self.original_grid = self.grid.copy()
         self.block_types = block_types if block_types is not None else SCHEME_FULL
         if not self.block_types:
-            raise ValueError("block_types 不能为空，至少配置一种方块")
+            raise ValueError("block_types must not be empty; configure at least one tile type")
         if any(block_id <= 1 for block_id in self.block_types):
-            raise ValueError("方块编号必须大于1，编号1保留给障碍物")
+            raise ValueError("Tile IDs must exceed 1; ID 1 is reserved for obstacles")
         if not any(info[0] == 1 and info[1] == 1 for info in self.block_types.values()):
-            raise ValueError("block_types 必须包含1x1方块，否则无法保证覆盖完整")
+            raise ValueError("block_types must include a 1x1 tile to guarantee complete coverage")
 
         self.block_counts = {block_id: 0 for block_id in self.block_types}
         self.placed_blocks = []
@@ -159,7 +159,7 @@ class GridFiller:
         return grid
 
     def _greedy_best_of_four(self, region_mask):
-        """回退后铺砖算法：四个扫描方向中选砖数最少者。"""
+        """Fallback tiling: select the fewest tiles among four scan directions."""
         def tile_in_order(x_scan_order, y_scan_order):
             covered_mask = np.zeros_like(region_mask, dtype=bool)
             placed_blocks = []
@@ -177,7 +177,7 @@ class GridFiller:
                             block_counts[block_id] += 1
                             placed_blocks.append({'x': x, 'y': y, 'h': h, 'w': w, 'id': block_id})
 
-            # 兜底：1x1保证完整覆盖
+            # Fallback: 1x1 tiles guarantee complete coverage
             one_by_one_ids = [bid for bid, (h, w, _, _) in self.block_types.items() if h == 1 and w == 1]
             one_by_one_id = one_by_one_ids[0]
             for x in x_scan_order:
@@ -199,21 +199,21 @@ class GridFiller:
         total_region = int(np.sum(region_mask))
         valid_results = [r for r in results if int(np.sum(r[3])) == total_region]
         if not valid_results:
-            # 理论上不会发生，因为1x1兜底可覆盖所有自由格。
+            # Should never occur because the 1x1 fallback covers every free cell.
             valid_results = results
         return min(valid_results, key=lambda r: r[0])
 
     def _milp_min_tile_cover(self, region_mask):
-        """回退前铺砖算法：0-1整数规划最少砖数覆盖。"""
+        """Primary tiling: minimum-tile coverage using 0-1 integer programming."""
         if not HAS_MILP:
-            raise RuntimeError("当前环境没有 scipy.optimize.milp")
+            raise RuntimeError("The current environment does not provide scipy.optimize.milp")
 
         region_cells = [(x, y) for x in range(self.grid_size) for y in range(self.grid_size) if region_mask[x, y]]
         total_region = len(region_cells)
         if total_region == 0:
             return [], {block_id: 0 for block_id in self.block_types}, np.zeros_like(region_mask, dtype=bool), "empty"
         if total_region > TILE_MILP_MAX_CELLS:
-            raise RuntimeError(f"区域自由格={total_region}超过TILE_MILP_MAX_CELLS={TILE_MILP_MAX_CELLS}")
+            raise RuntimeError(f"Region free-cell count={total_region} exceeds TILE_MILP_MAX_CELLS={TILE_MILP_MAX_CELLS}")
 
         cell_to_row = {cell: i for i, cell in enumerate(region_cells)}
         candidate_tiles = []
@@ -232,9 +232,9 @@ class GridFiller:
                         candidate_cell_rows.append([cell_to_row[c] for c in cells])
 
         if not candidate_tiles:
-            raise RuntimeError("没有可行候选砖块")
+            raise RuntimeError("No feasible candidate tiles")
         if len(candidate_tiles) > TILE_MILP_MAX_CANDIDATES:
-            raise RuntimeError(f"候选砖块={len(candidate_tiles)}超过TILE_MILP_MAX_CANDIDATES={TILE_MILP_MAX_CANDIDATES}")
+            raise RuntimeError(f"Candidate tile count={len(candidate_tiles)} exceeds TILE_MILP_MAX_CANDIDATES={TILE_MILP_MAX_CANDIDATES}")
 
         rows, cols, data = [], [], []
         for j, cell_rows in enumerate(candidate_cell_rows):
@@ -244,7 +244,7 @@ class GridFiller:
         A = coo_matrix((data, (rows, cols)), shape=(total_region, len(candidate_tiles))).tocsr()
 
         areas = np.array([block['h'] * block['w'] for block in candidate_tiles], dtype=float)
-        # 主目标：砖数最少。极小扰动只用于同砖数时倾向大砖，不改变最少砖数目标。
+        # Primary objective: minimize tile count. A tiny perturbation favors larger tiles only in ties, without changing the minimum-tile objective.
         c = np.ones(len(candidate_tiles), dtype=float) + 1e-6 / areas
 
         constraints = LinearConstraint(A, lb=np.ones(total_region), ub=np.ones(total_region))
@@ -259,7 +259,7 @@ class GridFiller:
             options={"time_limit": ILP_TIME_LIMIT, "mip_rel_gap": 0.0, "disp": False},
         )
         if res.x is None:
-            raise RuntimeError(f"MILP未返回可行解，status={res.status}, message={res.message}")
+            raise RuntimeError(f"MILP did not return a feasible solution, status={res.status}, message={res.message}")
 
         selected_indices = np.where(res.x > 0.5)[0]
         placed_blocks = [candidate_tiles[i] for i in selected_indices]
@@ -267,7 +267,7 @@ class GridFiller:
         for block in placed_blocks:
             covered_mask[block['x']:block['x'] + block['h'], block['y']:block['y'] + block['w']] = True
         if int(np.sum(covered_mask)) != total_region:
-            raise RuntimeError("MILP结果覆盖数量异常")
+            raise RuntimeError("MILP result has an unexpected coverage count")
 
         status_text = "milp_optimal" if res.status == 0 else f"milp_feasible_not_proven_status_{res.status}"
         return placed_blocks, self._block_counts_from_blocks(placed_blocks), covered_mask, status_text
@@ -294,7 +294,7 @@ class GridFiller:
                 return
             except Exception as e:
                 if self.verbose:
-                    print(f"⚠️ 铺砖MILP失败/超阈值，使用贪心回退：{e}")
+                    print(f"⚠️ Tiling MILP failed or exceeded a threshold; using greedy fallback: {e}")
 
         total_blocks, blocks, counts, _ = self._greedy_best_of_four(region_mask)
         self.placed_blocks = blocks
@@ -315,7 +315,7 @@ class GridFiller:
 
 
 # ============================================================
-# 连续平面避障最短路 + TSP
+# Continuous obstacle-avoiding shortest paths + TSP
 # ============================================================
 def segment_rect_intersection_interval(p1, p2, rect, eps=1e-9):
     x1, y1 = p1
@@ -406,7 +406,7 @@ def collect_obstacle_boundary_corners(obstacle_indices, map_size):
 
 def build_continuous_visibility_graph(required_points, obstacle_indices, map_size):
     if not HAS_NETWORKX:
-        raise RuntimeError("当前环境没有 networkx，无法构建连续避障可视图")
+        raise RuntimeError("networkx is unavailable; cannot construct the obstacle-avoiding visibility graph")
     obstacle_corners = collect_obstacle_boundary_corners(obstacle_indices, map_size)
     nodes = [tuple(map(float, p)) for p in required_points] + obstacle_corners
 
@@ -442,12 +442,12 @@ def compute_required_shortest_paths(visibility_graph, required_count):
 
 def solve_tsp_exact_mtz(distance_matrix, time_limit=60.0):
     if not HAS_MILP:
-        raise RuntimeError("当前SciPy版本没有 scipy.optimize.milp，不能使用精确MTZ TSP")
+        raise RuntimeError("This SciPy version lacks scipy.optimize.milp; cannot use exact MTZ TSP")
     n = distance_matrix.shape[0]
     if n <= 1:
         return list(range(n)), 0.0, "trivial"
     if not np.all(np.isfinite(distance_matrix)):
-        raise RuntimeError("距离矩阵存在不可达点对，不能求闭合TSP")
+        raise RuntimeError("The distance matrix contains unreachable pairs; cannot compute a closed TSP")
 
     arc_index = {}
     idx = 0
@@ -528,7 +528,7 @@ def solve_tsp_exact_mtz(distance_matrix, time_limit=60.0):
         options={"time_limit": time_limit, "mip_rel_gap": 0.0, "disp": False},
     )
     if res.x is None:
-        raise RuntimeError(f"精确TSP未返回可行解，status={res.status}, message={res.message}")
+        raise RuntimeError(f"Exact TSP did not return a feasible solution, status={res.status}, message={res.message}")
 
     selected = {(i, j) for (i, j), k in arc_index.items() if res.x[k] > 0.5}
     successor = {i: j for i, j in selected}
@@ -537,18 +537,18 @@ def solve_tsp_exact_mtz(distance_matrix, time_limit=60.0):
     visited = {0}
     for _ in range(n + 1):
         if current not in successor:
-            raise RuntimeError("TSP解解析失败：缺少后继节点")
+            raise RuntimeError("TSP solution parsing failed: missing successor node")
         nxt = successor[current]
         route.append(nxt)
         current = nxt
         if current == 0:
             break
         if current in visited:
-            raise RuntimeError("TSP解解析失败：发现异常子回路")
+            raise RuntimeError("TSP solution parsing failed: unexpected subtour")
         visited.add(current)
 
     if route[-1] != 0 or len(set(route[:-1])) != n:
-        raise RuntimeError("TSP解没有形成包含所有节点的闭合回路")
+        raise RuntimeError("TSP solution does not form a closed tour containing all nodes")
 
     objective = sum(distance_matrix[u, v] for u, v in zip(route[:-1], route[1:]))
     status_text = "exact_mtz_optimal" if res.status == 0 else f"exact_mtz_feasible_not_proven_status_{res.status}"
@@ -557,12 +557,12 @@ def solve_tsp_exact_mtz(distance_matrix, time_limit=60.0):
 
 def solve_tsp_christofides(distance_matrix):
     if not HAS_NETWORKX:
-        raise RuntimeError("当前环境没有 networkx，不能使用Christofides回退")
+        raise RuntimeError("networkx is unavailable; cannot use the Christofides fallback")
     n = distance_matrix.shape[0]
     if n <= 1:
         return list(range(n)), 0.0, "trivial"
     if not np.all(np.isfinite(distance_matrix)):
-        raise RuntimeError("距离矩阵存在不可达点对，不能用Christofides求TSP")
+        raise RuntimeError("The distance matrix contains unreachable pairs; Christofides cannot solve TSP")
 
     K = nx.Graph()
     K.add_nodes_from(range(n))
@@ -587,14 +587,14 @@ def solve_tsp_christofides(distance_matrix):
 
 def solve_tsp_route(distance_matrix):
     """
-    严格按照用户给定规则选择TSP算法：
-    1) 若砖块中心数 <= TSP_EXACT_MAX_POINTS(80)，尝试MTZ精确TSP；
-    2) 若点数 > 80，直接回退到Christofides；
-    3) 若MTZ在TSP_TIME_LIMIT内失败、超时或未返回可用解，回退到Christofides。
+    Select the TSP algorithm strictly according to the supplied rules:
+    1) For <= TSP_EXACT_MAX_POINTS(80) tile centers, try exact MTZ TSP;
+    2) For > 80 points, fall back directly to Christofides;
+    3) If MTZ fails, times out within TSP_TIME_LIMIT, or returns no usable solution, fall back to Christofides.
 
-    回退前/后标记：
-    - BEFORE_FALLBACK：MTZ精确TSP成功返回；
-    - AFTER_FALLBACK：Christofides回退。
+    Before/after fallback labels:
+    - BEFORE_FALLBACK: MTZ exact TSP returned successfully;
+    - AFTER_FALLBACK: Christofides fallback.
     """
     n = distance_matrix.shape[0]
     if n <= 1:
@@ -614,11 +614,11 @@ def solve_tsp_route(distance_matrix):
 
 def compute_tile_tsp(blocks, obstacle_indices, map_size):
     """
-    对全部砖块中心构造连续避障距离矩阵，然后按用户指定规则求TSP：
-    - n <= 80：MTZ精确TSP，失败/超时回退Christofides；
-    - n > 80：Christofides。
+    Construct the continuous obstacle-avoiding distance matrix for all tile centers, then apply the supplied rules to solve TSP:
+    - n <= 80: MTZ exact TSP; on failure/timeout, fall back to Christofides;
+    - n > 80: Christofides.
 
-    本函数不包含 fast_sweep、fast_nearest_neighbor 或其他额外回退算法。
+    This function does not include fast_sweep, fast_nearest_neighbor, or other fallback algorithms.
     """
     if len(blocks) == 0:
         return {
@@ -660,7 +660,7 @@ def compute_tile_tsp(blocks, obstacle_indices, map_size):
 
 
 # ============================================================
-# 实验流程：保持原脚本的尺寸、密度、50种子、并行和输出结构
+# Experiment workflow: preserve the original sizes, densities, 50 seeds, parallel execution, and output structure
 # ============================================================
 def generate_obstacles_for_size(grid_size, obstacle_num, seed):
     rng = random.Random(seed)
@@ -676,13 +676,13 @@ def _stage_to_counts(stage):
     return (1, 0) if stage == BEFORE_FALLBACK else (0, 1)
 
 
-# 定义被多进程调用的单次实验任务
+# Define a single experiment task for multiprocessing
 def _run_single_experiment(args):
     grid_size, obstacle_ratio, seed = args
     obstacle_num = max(1, int(grid_size * grid_size * obstacle_ratio))
     obstacles = generate_obstacles_for_size(grid_size, obstacle_num, seed)
 
-    # 方案 A：SCHEME_FULL
+    # Scheme A: SCHEME_FULL
     filler_a = GridFiller(
         grid_size=grid_size,
         obstacle_num=obstacle_num,
@@ -699,7 +699,7 @@ def _run_single_experiment(args):
     a_tile_before, a_tile_after = _stage_to_counts(filler_a.tile_stage)
     a_tsp_before, a_tsp_after = _stage_to_counts(tsp_a_data['tsp_stage'])
 
-    # 方案 B：SCHEME_SIMPLE
+    # Scheme B: SCHEME_SIMPLE
     filler_b = GridFiller(
         grid_size=grid_size,
         obstacle_num=obstacle_num,
@@ -771,11 +771,11 @@ def run_experiment_for_ratio(min_size, max_size, step, obstacle_ratio, seeds_lis
         avg_time_b = sum_time_b / num_experiments
 
         print(
-            f"密度 {int(obstacle_ratio * 100)}% | 网格 {grid_size}x{grid_size} (基于50个种子平均): "
-            f"A(铺砖={avg_blocks_a:.2f}, TSP={avg_tsp_a:.2f}, 时间={avg_time_a:.4f}s, "
-            f"铺砖前/后={a_tile_before}/{a_tile_after}, TSP前/后={a_tsp_before}/{a_tsp_after}) | "
-            f"B(铺砖={avg_blocks_b:.2f}, TSP={avg_tsp_b:.2f}, 时间={avg_time_b:.4f}s, "
-            f"铺砖前/后={b_tile_before}/{b_tile_after}, TSP前/后={b_tsp_before}/{b_tsp_after})"
+            f"Density {int(obstacle_ratio * 100)}% | Grid {grid_size}x{grid_size} (averaged over 50 seeds): "
+            f"A(Tiles={avg_blocks_a:.2f}, TSP={avg_tsp_a:.2f}, Time={avg_time_a:.4f}s, "
+            f"Tiling before/after={a_tile_before}/{a_tile_after}, TSP before/after={a_tsp_before}/{a_tsp_after}) | "
+            f"B(Tiles={avg_blocks_b:.2f}, TSP={avg_tsp_b:.2f}, Time={avg_time_b:.4f}s, "
+            f"Tiling before/after={b_tile_before}/{b_tile_after}, TSP before/after={b_tsp_before}/{b_tsp_after})"
         )
 
         lines.append(
@@ -788,7 +788,7 @@ def run_experiment_for_ratio(min_size, max_size, step, obstacle_ratio, seeds_lis
 
 
 if __name__ == "__main__":
-    # 多进程在 Windows 环境下必须在这个保护块内执行
+    # On Windows, multiprocessing must run inside this guard
     min_size = 20
     max_size = 200
     step = 10
@@ -803,19 +803,19 @@ if __name__ == "__main__":
     ratios = [0.10, 0.15, 0.20]
     all_experiments_output = []
 
-    print("\n================ 算法标记说明 ================")
-    print("铺砖 before_fallback = MILP最少砖数；铺砖 after_fallback = 四方向贪心回退")
-    print("TSP  before_fallback = 连续避障距离 + MTZ精确TSP；TSP  after_fallback = Christofides回退")
+    print("\n================ Algorithm stage labels ================")
+    print("tiling before_fallback = MILP minimum tile count; tiling after_fallback = four-direction greedy fallback")
+    print("TSP  before_fallback = continuous obstacle-avoiding distances + exact MTZ TSP; TSP after_fallback = Christofides fallback")
 
     for ratio in ratios:
         ratio_int = int(ratio * 100)
-        print(f"\n================ 开始运行障碍物密度 {ratio_int}% 的实验 (使用指定的50个种子) ================")
+        print(f"\n================ Starting experiments at obstacle density {ratio_int}% (using the specified 50 seeds) ================")
 
         start_ratio_time = time.perf_counter()
         data_str = run_experiment_for_ratio(min_size, max_size, step, ratio, EXPERIMENT_SEEDS)
         end_ratio_time = time.perf_counter()
 
-        print(f"[{ratio_int}% 实验完成] 耗时: {end_ratio_time - start_ratio_time:.2f} 秒")
+        print(f"[{ratio_int}% experiments complete] Elapsed: {end_ratio_time - start_ratio_time:.2f} s")
 
         var_name = f"data_{ratio_int}_str"
         final_output = f'{var_name} = """\n{data_str}\n"""'
@@ -824,4 +824,4 @@ if __name__ == "__main__":
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write("\n\n".join(all_experiments_output))
 
-    print(f"\n>> 所有实验完成！平均值数据已成功保存至: {file_path}")
+    print(f"\n>> All experiments complete! Averaged data saved to: {file_path}")

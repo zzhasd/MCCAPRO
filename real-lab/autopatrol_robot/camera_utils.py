@@ -6,118 +6,123 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 import cv2
 
+try:
+    from .runtime_config import image_directory
+except ImportError:
+    from runtime_config import image_directory
+
 class CameraImageSaver(Node):
     """
-    极简相机图片保存接口
-    功能：订阅相机话题 → 等待获取图像 → 保存到指定路径（无窗口显示）
+    Minimal camera-image saving interface
+    Workflow: subscribe to the camera topic -> wait for an image -> save to the specified path (no display window)
     """
     def __init__(self):
         super().__init__("camera_image_saver_node")
         
-        # 1. 核心配置（可根据需要调整）
-        self.camera_topic = "/camera/color/image_raw"  # 相机图像话题
-        self.save_dir = "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto/"  # 指定保存路径
-        self.image_filename = "camera_capture.png"  # 默认保存的文件名
-        self.bridge = CvBridge()  # ROS图像 ↔ OpenCV图像转换工具
-        self.latest_image = None  # 缓存最新的相机图像
+        # 1. Core settings (adjust as needed)
+        self.camera_topic = "/camera/color/image_raw"  # Camera image topic
+        self.save_dir = image_directory()
+        self.image_filename = "camera_capture.png"  # Default output filename
+        self.bridge = CvBridge()  # ROS image <-> OpenCV image converter
+        self.latest_image = None  # Cache the latest camera image
         
-        # 2. 自动创建保存目录（避免路径不存在报错）
+        # 2. Create the output directory automatically (avoid missing-path errors)
         self._create_save_dir()
         
-        # 3. 订阅相机话题，实时获取图像
+        # 3. Subscribe to the camera topic for live images
         self.image_sub = self.create_subscription(
             Image,
             self.camera_topic,
-            self.image_callback,  # 图像回调函数
-            1  # 【修复】：将队列大小设为1，丢弃移动过程中的旧图像
+            self.image_callback,  # Image callback
+            1  # [Fix]: Set queue size to 1 to discard old images captured during movement
         )
-        self.get_logger().info(f"已订阅相机话题: {self.camera_topic}")
-        self.get_logger().info(f"图片将保存到: {self.save_dir}")
+        self.get_logger().info(f"Subscribed to camera topic: {self.camera_topic}")
+        self.get_logger().info(f"Images will be saved to: {self.save_dir}")
 
     def _create_save_dir(self):
-        """自动创建保存目录（如果不存在）"""
+        """Create the output directory automatically (if it does not exist)"""
         if not os.path.exists(self.save_dir):
             try:
                 os.makedirs(self.save_dir)
-                self.get_logger().info(f"创建保存目录成功: {self.save_dir}")
+                self.get_logger().info(f"Output directory created: {self.save_dir}")
             except Exception as e:
-                self.get_logger().error(f"创建保存目录失败: {str(e)}")
-                raise  # 目录创建失败则终止节点
+                self.get_logger().error(f"Failed to create output directory: {str(e)}")
+                raise  # Stop the node if directory creation fails
 
     def image_callback(self, msg: Image):
-        """相机图像回调函数：缓存最新图像"""
+        """Camera callback: cache the latest image"""
         try:
-            # 将ROS的Image消息转换为OpenCV格式（BGR8是RGB相机的标准格式）
+            # Convert the ROS Image message to OpenCV format (BGR8 is the standard RGB-camera format)
             self.latest_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         except Exception as e:
-            self.get_logger().error(f"图像格式转换失败: {str(e)}")
+            self.get_logger().error(f"Image format conversion failed: {str(e)}")
 
     def wait_for_image(self, timeout=10.0):
         """
-        等待获取相机图像（超时退出）
-        :param timeout: 最长等待时间（秒）
-        :return: bool - 是否获取到图像
+        Wait for a camera image (exit on timeout)
+        :param timeout: Maximum wait time (seconds)
+        :return: bool - Whether an image was received
         """
-        # 【修复】：强制清空历史图像，确保每次调用都去拉取最新的一帧
+        # [Fix]: Clear the previous image so every call requests the latest frame
         self.latest_image = None  
 
         start_time = time.time()
-        self.get_logger().info("等待获取最新相机图像...")
+        self.get_logger().info("Waiting for the latest camera image...")
         
         while self.latest_image is None:
-            # 检查是否超时
+            # Check for timeout
             if time.time() - start_time > timeout:
-                self.get_logger().error(f"等待图像超时（{timeout}秒），请检查相机！")
+                self.get_logger().error(f"Timed out waiting for an image ({timeout} s); check the camera!")
                 return False
-            # 让ROS处理回调（关键：必须调用spin_once，否则回调不会执行）
+            # Let ROS process callbacks (spin_once is required for callbacks to run)
             rclpy.spin_once(self, timeout_sec=0.1)
         
-        self.get_logger().info("成功获取最新相机图像！")
+        self.get_logger().info("Latest camera image received!")
         return True
 
     def save_image(self, filename=None):
         """
-        对外暴露的核心接口：保存当前相机画面到指定路径
-        :param filename: 自定义文件名（可选，默认用self.image_filename）
-        :return: bool - 保存成功/失败
+        Public interface: save the current camera frame to the specified path
+        :param filename: Custom filename (optional; defaults to self.image_filename)
+        :return: bool - Whether saving succeeded
         """
         if filename is None:
             filename = self.image_filename
         
         save_path = os.path.join(self.save_dir, filename)
         
-        # 检查是否有缓存的图像
+        # Check for a cached image
         if self.latest_image is None:
-            self.get_logger().error("未获取到相机图像！请检查相机是否正常/话题是否正确")
+            self.get_logger().error("No camera image received! Check the camera and topic settings")
             return False
         
-        # 保存图像到指定路径
+        # Save the image to the specified path
         try:
             cv2.imwrite(save_path, self.latest_image)
-            self.get_logger().info(f"图片保存成功: {save_path}")
+            self.get_logger().info(f"Image saved successfully: {save_path}")
             return True
         except Exception as e:
-            self.get_logger().error(f"图片保存失败: {str(e)}")
+            self.get_logger().error(f"Failed to save image: {str(e)}")
             return False
 
-# ------------------- 调用示例 -------------------
+# ------------------- Usage example -------------------
 def main(args=None):
-    # 初始化ROS2
+    # Initialize ROS2
     rclpy.init(args=args)
     
-    # 创建相机保存节点
+    # Create the camera-saving node
     camera_saver = CameraImageSaver()
     
-    # 关键：先等待获取图像，再保存
+    # Wait for an image before saving it
     if camera_saver.wait_for_image(timeout=10.0):
-        # 方式1：保存默认文件名
+        # Option 1: use the default filename
         camera_saver.save_image()
         
-        # 方式2：自定义文件名保存（可选）
+        # Option 2: use a custom filename (optional)
         # timestamp = time.strftime("%Y%m%d_%H%M%S")
         # camera_saver.save_image(f"capture_{timestamp}.png")
     
-    # 销毁节点、关闭ROS2
+    # Destroy the node and shut down ROS2
     camera_saver.destroy_node()
     rclpy.shutdown()
 

@@ -7,7 +7,7 @@ import logging
 import os
 import io
 
-# --- 新增的异步落盘依赖 ---
+# --- New dependencies for asynchronous disk writes ---
 import csv
 from datetime import datetime
 from queue import Queue, Empty
@@ -18,51 +18,53 @@ try:
     HAS_MAP_LIBS = True
 except ImportError:
     HAS_MAP_LIBS = False
-    print("⚠️ 缺少 yaml 或 PIL 库，地图功能可能无法使用。请执行: pip install pyyaml Pillow")
+    print("⚠️ yaml or PIL is missing; map features may be unavailable. Run: pip install pyyaml Pillow")
 
-# --- 新增：复用 generate_target_points.py 中的分区/填充逻辑，为前端提供边框矩形 ---
+# --- New: reuse partitioning/tiling from generate_target_points.py to provide border rectangles to the frontend ---
 try:
     import generate_target_points as target_planner
     HAS_TARGET_PLANNER = hasattr(target_planner, 'generate_assignment_rectangles')
 except Exception as e:
     target_planner = None
     HAS_TARGET_PLANNER = False
-    print(f"⚠️ 无法加载 generate_target_points.py，分配区域边框将不可用: {e}")
+    print(f"⚠️ Unable to load generate_target_points.py; assigned-region borders will be unavailable: {e}")
 
 app = Flask(__name__)
 
-# ================= 配置参数 =================
+# ================= Configuration parameters =================
 PORT = 9999
 ROBOT_NUM = 2
 UPDATE_INTERVAL = 350.0  
 
-# ✨ 新增：自定义到期后的固定权重设定
+# ✨ New: custom fixed weights applied when the timer expires
 CUSTOM_WEIGHTS = [0.72, 0.28]
 # [0.72, 0.28]  [0.37, 0.63]
 
-# ✨ 新增：机器车的扫地/巡检覆盖半径（单位：米）
+# ✨ New: robot cleaning/patrol coverage radius (meters)
 COVERAGE_RADIUS = 2.05   
 
-# 续航设定（秒）：可为每台机器人独立设置
+# Battery endurance settings (seconds); configurable per robot
 MAX_BATTERY_SEC_LIST = [60.0 * 60.0, 40.0 * 60.0]
 
 if len(MAX_BATTERY_SEC_LIST) < ROBOT_NUM:
-    print("⚠️ 警告: MAX_BATTERY_SEC_LIST 长度小于 ROBOT_NUM，将使用默认值 40 分钟补齐。")
+    print("⚠️ Warning: MAX_BATTERY_SEC_LIST is shorter than ROBOT_NUM; padding with the default 40 minutes.")
     MAX_BATTERY_SEC_LIST += [40.0 * 60.0] * (ROBOT_NUM - len(MAX_BATTERY_SEC_LIST))
 
-# 补齐权重数组（防止配置的数量少于实际机器人数量）
+# Pad the weight array (if fewer weights are configured than robots)
 if len(CUSTOM_WEIGHTS) < ROBOT_NUM:
     CUSTOM_WEIGHTS += [1.0 / ROBOT_NUM] * (ROBOT_NUM - len(CUSTOM_WEIGHTS))
 
-# ================= 地图配置 =================
-MAP_DIR = r"D:\桌面\MCCA-PRO\real-lab\maps"
+# ================= Map configuration =================
+MAP_DIR = os.environ.get("AUTOPATROL_MAP_DIR", os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "maps")
+))
 MAP_YAML = "yahboomcar.yaml"
 
 map_info = None
 map_image_bytes = None
 
 def load_map():
-    """解析 yaml 并将 pgm 转换为 png 字节流"""
+    """Parse YAML and convert PGM to PNG bytes"""
     global map_info, map_image_bytes
     if not HAS_MAP_LIBS: return
     try:
@@ -87,13 +89,13 @@ def load_map():
             'real_w': w * res,
             'real_h': h * res
         }
-        print(f"🗺️ 地图加载成功: {cfg['image']} (尺寸: {w}x{h}, 真实大小: {map_info['real_w']:.2f}m x {map_info['real_h']:.2f}m)")
+        print(f"🗺️ Map loaded: {cfg['image']} (size: {w}x{h}, physical size: {map_info['real_w']:.2f}m x {map_info['real_h']:.2f}m)")
     except Exception as e:
-        print(f"❌ 地图加载失败，请检查路径是否正确: {e}")
+        print(f"❌ Map loading failed; check the path: {e}")
 
 
 def get_assignment_rects_snapshot(weights_snapshot):
-    """按当前权重生成/读取分配区域矩形边框数据。只在权重变化时重新计算。"""
+    """Generate/read assigned-region border rectangles for the current weights; recompute only when weights change."""
     global assignment_cache_key, assignment_rects_cache, assignment_version
 
     if not HAS_TARGET_PLANNER or target_planner is None:
@@ -106,9 +108,9 @@ def get_assignment_rects_snapshot(weights_snapshot):
             return {"version": assignment_version, "rects": assignment_rects_cache}
 
     try:
-        # 让 generate_target_points.py 使用 PC 端正在显示的同一张地图。
+        # Make generate_target_points.py use the same map displayed by the PC server.
         target_planner.YAML_PATH = os.path.join(MAP_DIR, MAP_YAML)
-        target_planner.IMAGE_DIR = ""  # 前端只需要 JSON 边框，不需要额外保存 matplotlib 图片
+        target_planner.IMAGE_DIR = ""  # The frontend only needs JSON borders; no additional matplotlib image is needed
 
         result = target_planner.generate_assignment_rectangles(list(key))
         new_rects = result.get("rects", [])
@@ -120,34 +122,34 @@ def get_assignment_rects_snapshot(weights_snapshot):
             return {"version": assignment_version, "rects": assignment_rects_cache}
 
     except Exception as e:
-        print(f"❌ 计算分配区域边框失败: {e}")
+        print(f"❌ Failed to compute assigned-region borders: {e}")
         with assignment_lock:
-            # 失败时也更新 key，避免每秒重复刷屏报错；修改代码/地图后重启即可重新计算。
+            # Update the key even on failure to avoid repeated errors every second; restart after changing code/maps to recompute.
             assignment_rects_cache = []
             assignment_cache_key = key
             assignment_version += 1
             return {"version": assignment_version, "rects": assignment_rects_cache}
 
-# ================= 轨迹异步存储配置 =================
+# ================= Asynchronous trajectory storage settings =================
 trajectory_queue = Queue()
 trajectory_files = {}
 
 def init_trajectory_files():
-    """初始化轨迹记录文件，生成带时间戳的文件名"""
+    """Initialize a trajectory log with a timestamped filename"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("logs", exist_ok=True)
     
     for i in range(ROBOT_NUM):
         filename = os.path.join("logs", f"robot_{i}_path_{timestamp}.csv")
-        # a 模式追加，确保实时写入不覆盖
+        # a Append mode ensures live writes do not overwrite existing data
         f = open(filename, 'a', newline='', encoding='utf-8')
         writer = csv.writer(f)
-        writer.writerow(['timestamp', 'x', 'y']) # 写入表头
+        writer.writerow(['timestamp', 'x', 'y']) # Write the header
         trajectory_files[i] = (f, writer)
-        print(f"📝 Robot {i} 轨迹记录文件已创建: {filename}")
+        print(f"📝 Robot {i} Trajectory log created: {filename}")
 
 def trajectory_saver_loop():
-    """后台独立线程：负责将队列中的数据实时写入磁盘"""
+    """Dedicated background thread: write queued data to disk in real time"""
     while True:
         try:
             item = trajectory_queue.get(timeout=1.0)
@@ -156,24 +158,24 @@ def trajectory_saver_loop():
             if r_id in trajectory_files:
                 f, writer = trajectory_files[r_id]
                 writer.writerow([t, x, y])
-                f.flush() # 强制刷新到磁盘，防断电丢失
+                f.flush() # Force flushing to disk to reduce data loss on power failure
                 
             trajectory_queue.task_done()
         except Empty:
             pass
         except Exception as e:
-            print(f"❌ 写入轨迹文件时出错: {e}")
+            print(f"❌ Error writing trajectory log: {e}")
 
-# ================= 状态数据结构 =================
+# ================= State data structure =================
 state_lock = threading.Lock()
 start_time = time.time()
-global_phase = 1 # ✨ 新增全局阶段变量：1代表初始，2代表已调整权重
+global_phase = 1 # ✨ New global phase: 1=initial, 2=weights adjusted
 
-# 初始权重依然平分 (例如：2车就是 0.5, 0.5)
+# Initial weights are still equal (for example, for 2 robots 0.5, 0.5)
 weights_array = [1.0 / ROBOT_NUM for _ in range(ROBOT_NUM)]
 speeds_array = [4 for _ in range(ROBOT_NUM)] 
 
-# ✨ 新增：分配区域边框缓存。权重变化时版本号递增，前端据此清空旧边框并重绘。
+# ✨ New: assigned-region border cache. Increment the version on weight changes so the frontend clears and redraws borders.
 assignment_lock = threading.Lock()
 assignment_cache_key = None
 assignment_rects_cache = []
@@ -187,14 +189,14 @@ for i in range(ROBOT_NUM):
         'y': None,
         'last_time': time.time(),
         'speed_history': deque(maxlen=20),
-        'path_history_1': deque(maxlen=2000),  # ✨ 分阶段保存：阶段1轨迹
-        'path_history_2': deque(maxlen=2000),  # ✨ 分阶段保存：阶段2轨迹
+        'path_history_1': deque(maxlen=2000),  # ✨ Store separately by phase: phase 1 trajectory
+        'path_history_2': deque(maxlen=2000),  # ✨ Store separately by phase: phase 2 trajectory
         'start_active_time': None, 
         'battery_percent': 100.0
     }
 
 def update_robot_battery(r_id, current_time):
-    """更新电池状态。续航为0强制下线。"""
+    """Update battery status; force offline when endurance reaches 0."""
     state = robots_state[r_id]
     just_went_offline = False
     if state['start_active_time'] is not None:
@@ -205,7 +207,7 @@ def update_robot_battery(r_id, current_time):
         state['battery_percent'] = (remaining / max_battery_sec) * 100.0
         
         if state['battery_percent'] < 10.0 and speeds_array[r_id] != -1:
-            print(f"⚠️ Robot {r_id} 续航不足10% ({state['battery_percent']:.1f}%)，强制下线！")
+            print(f"⚠️ Robot {r_id} Battery below 10% ({state['battery_percent']:.1f}%); forcing offline!")
             speeds_array[r_id] = -1
             just_went_offline = True
     return just_went_offline
@@ -214,21 +216,21 @@ def do_calculate_weights(current_time, force_update=False):
     pass
 
 def calculate_weights_loop():
-    """后台独立线程：仅在倒计时结束时触发一次权重更新"""
+    """Dedicated background thread: update weights once when the countdown ends"""
     global weights_array, global_phase
     
-    print(f"⏳ 权重切换倒计时已启动，将在 {UPDATE_INTERVAL} 秒后更新为自定义权重: {CUSTOM_WEIGHTS[:ROBOT_NUM]}")
+    print(f"⏳ Weight-switch countdown started; custom weights will be applied in {UPDATE_INTERVAL} s: {CUSTOM_WEIGHTS[:ROBOT_NUM]}")
     
-    # 1. 睡死，直到 UPDATE_INTERVAL 时间到
+    # 1. Sleep until UPDATE_INTERVAL has elapsed
     time.sleep(UPDATE_INTERVAL)
     
-    # 2. 到期后，仅更新一次自定义权重并切换全局阶段
+    # 2. At expiry, apply custom weights once and switch the global phase
     with state_lock:
         weights_array = CUSTOM_WEIGHTS[:ROBOT_NUM]
-        global_phase = 2  # ✨ 标志着分区变了，开始存入新阶段的轨迹
-        print(f"🌟 时间到！当前系统权重已锁定为: {weights_array}，轨迹开始使用新颜色标绘！")
+        global_phase = 2  # ✨ The partition has changed; start storing trajectories for the new phase
+        print(f"🌟 Timer expired! System weights locked to: {weights_array}; trajectories now use new colors!")
 
-    # 3. 之后不再更新权重，仅保留电池的定时巡检
+    # 3. Do not update weights again; only continue periodic battery checks
     while True:
         time.sleep(1.0)
         current_time = time.time()
@@ -236,7 +238,7 @@ def calculate_weights_loop():
             for i in range(ROBOT_NUM):
                 update_robot_battery(i, current_time)
 
-# ================= 路由接口 =================
+# ================= HTTP routes =================
 
 @app.route('/')
 def index():
@@ -250,7 +252,7 @@ def get_map_image():
 
 @app.route('/status', methods=['GET'])
 def get_status():
-    global weights_array, speeds_array, global_phase # ✨ 引入 global_phase 传给前端
+    global weights_array, speeds_array, global_phase # ✨ Expose global_phase to the frontend
     with state_lock:
         current_time = time.time()
         run_time = int(current_time - start_time)
@@ -263,11 +265,11 @@ def get_status():
             data_counts[i] = len(history_list)
             batteries[i] = robots_state[i]['battery_percent']
             
-            # 分别返回两段轨迹
+            # Return the two trajectory segments separately
             paths_1[i] = list(robots_state[i]['path_history_1'])
             paths_2[i] = list(robots_state[i]['path_history_2'])
 
-        # 拷贝快照，避免分配边框计算时长期占用状态锁
+        # Copy a snapshot to avoid holding the state lock while computing region borders
         weights_snapshot = list(weights_array)
         speeds_snapshot = list(speeds_array)
         phase_snapshot = global_phase
@@ -285,7 +287,7 @@ def get_status():
         "paths_2": paths_2,
         "map_info": map_info,
         "coverage_radius": COVERAGE_RADIUS,
-        "phase": phase_snapshot, # ✨ 返回当前全局阶段，前端用于重置覆盖面积
+        "phase": phase_snapshot, # ✨ Return the current global phase so the frontend can reset coverage area
         "assignment_version": assignment_snapshot["version"],
         "assignment_rects": assignment_snapshot["rects"]
     })
@@ -319,25 +321,25 @@ def report_position():
             state['y'] = new_y
             state['last_time'] = new_time
 
-            # 根据阶段将坐标存入不同的队列
+            # Store coordinates in the queue for the current phase
             if global_phase == 1:
                 state['path_history_1'].append([new_x, new_y])
             else:
-                # 刚切换到阶段2时，为了保证轨迹不断裂，接上阶段1的最后一个点
+                # On entering phase 2, prepend the last phase 1 point to keep the trajectory continuous
                 if len(state['path_history_2']) == 0 and len(state['path_history_1']) > 0:
                     state['path_history_2'].append(state['path_history_1'][-1])
                 state['path_history_2'].append([new_x, new_y])
 
-            # 极速非阻塞推送至落盘队列
+            # Push to the disk-write queue without blocking
             trajectory_queue.put((r_id, new_time, new_x, new_y))
 
             if update_robot_battery(r_id, new_time):
                 do_calculate_weights(new_time, force_update=True)
 
             # ================================
-            # 新增：前端显示速度 与 机器人实际下发速度 分离
-            # 前端按 2：界面仍显示半速
-            # 机器人实际收到：4，全速执行
+            # New: separate the speed shown in the frontend from the speed sent to the robot
+            # Frontend selects 2: display half speed
+            # Robot receives 4: execute at full speed
             # ================================
             display_speed = speeds_array[r_id]
 
@@ -385,13 +387,13 @@ def force_offline():
 if __name__ == '__main__':
     load_map() 
     
-    # 启动时初始化 CSV 文件并开启后台落盘守护线程
+    # Initialize the CSV file and start the background writer daemon at startup
     init_trajectory_files()
     threading.Thread(target=trajectory_saver_loop, daemon=True).start()
     threading.Thread(target=calculate_weights_loop, daemon=True).start()
     
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
-    print(f"🚀 PC Server 启动，HTTP 端口 {PORT}")
-    print(f"📊 监控中心访问地址: http://localhost:{PORT}/")
+    print(f"🚀 PC Server started on HTTP port {PORT}")
+    print(f"📊 Monitoring dashboard URL: http://localhost:{PORT}/")
     app.run(host='0.0.0.0', port=PORT, debug=False)

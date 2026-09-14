@@ -1,13 +1,13 @@
-# 所有 Python 缓存目录
+# All Python cache directories
 __pycache__/
 
-# 所有 visualization_cache 目录
+# All visualization_cache directories
 visualization_cache/
 
-# 所有 PNG 文件
+# All PNG files
 *.png
 
-# 本地快速回归测试输出
+# Local quick regression test outputs
 results_smoke/
 .external_baselines/
 
@@ -30,3 +30,16 @@ labG-Comprehensive Comparison/third_party/
 logs/
 
 *.pdf
+
+# Local configuration, editor state, and anonymous submission bundles.
+.ipynb_checkpoints/
+.env
+.env.*
+!.env.example
+.venv/
+.vscode/
+.idea/
+tmp/
+submission/
+real-lab/autopatrol_robot/config.local.yaml
+real-lab/tempphoto/

@@ -10,7 +10,7 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-# 设置中文字体
+# Configure CJK fonts
 plt.rcParams['font.sans-serif'] = ['SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -25,7 +25,7 @@ class OptimizedMCPP:
         self.generate_map()
         self.build_sparse_graph()
         
-        # 用于绘图的数据留存
+        # Retain data for plotting
         self.centroids_xy = []
         self.all_tiles = []
         self.robot_mst_dict = {}
@@ -317,7 +317,7 @@ class OptimizedMCPP:
 
 
 def run_stress_test():
-    # 定义50个随机种子
+    # Define 50 random seeds
     seeds = [
         42, 100, 256, 512, 1024, 2048, 4096, 8192, 12345, 99999,
         7, 13, 29, 63, 127, 255, 511, 777, 1337, 2024,
@@ -326,28 +326,28 @@ def run_stress_test():
         37019, 39041, 41047, 43051, 45053, 47057, 49069, 51071, 53087, 55073
     ]
     
-    # 1. 获取当前脚本所在的绝对目录 (labE-Scalability-Complexity)
+    # 1. Get the absolute directory of the current script (labE-Scalability-Complexity)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # 2. 生成时间戳
+    # 2. Generate a timestamp
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    # 3. 直接在当前代码所在目录下生成带时间戳的 txt 文件名
+    # 3. Generate a timestamped txt filename in the current script directory
     log_file_path = os.path.join(script_dir, f"StressTest_DataLog_{timestamp}.txt")
     
-    print(f"📂 实验结果图表和TXT数据将自动保存在目录: {script_dir}")
+    print(f"📂 Experiment plots and TXT data will be saved automatically to: {script_dir}")
     
     with open(log_file_path, "w", encoding="utf-8") as f:
         f.write("="*60 + "\n")
-        f.write(f" mCPP 时空扩展性压力测试 - 数据留档 ({len(seeds)}个随机种子)\n")
-        f.write(f" 测试种子列表: {seeds}\n")
+        f.write(f" mCPP Spatial and fleet scalability stress test - data archive ({len(seeds)} random seeds)\n")
+        f.write(f" Test seed list: {seeds}\n")
         f.write("="*60 + "\n\n")
         
-        # ---------------- 实验一：空间扩展性测试 ----------------
+        # ---------------- Experiment 1: spatial scalability test ----------------
         space_maps = [25, 50, 75, 100, 125, 150, 175, 200]
         space_times_dict = {ms: [] for ms in space_maps} 
         
-        title1 = "▶ 实验一：空间扩展性压力测试 (固定机器人=5)"
+        title1 = "▶ Experiment 1: spatial scalability stress test (fixed robots=5)"
         print("\n" + "="*60 + "\n" + title1 + "\n" + "="*60)
         f.write("="*60 + "\n" + title1 + "\n" + "="*60 + "\n")
         
@@ -361,7 +361,7 @@ def run_stress_test():
                 elapsed = time.time() - start_t
                 space_times_dict[ms].append(elapsed)
                 
-                res_str = f"[*] 地图 {ms:>3}x{ms:<3} | Seed: {seed:>5} | 耗时: {elapsed:.3f} 秒"
+                res_str = f"[*] Map {ms:>3}x{ms:<3} | Seed: {seed:>5} | Elapsed: {elapsed:.3f} s"
                 print(res_str)
                 f.write(res_str + "\n")
                 
@@ -370,14 +370,14 @@ def run_stress_test():
                 #     solver.save_visualization(img_name, f"Space Extension: Map {ms}x{ms}, 5 Robots (Seed {seed})")
             
             avg_time = np.mean(space_times_dict[ms])
-            f.write(f"--- 地图 {ms}x{ms} 测试完成，{len(seeds)}次平均耗时: {avg_time:.3f} 秒 ---\n\n")
+            f.write(f"--- Map {ms}x{ms} complete; mean runtime over {len(seeds)} trials: {avg_time:.3f} s ---\n\n")
 
-        # ---------------- 实验二：集群扩展性测试 ----------------
+        # ---------------- Experiment 2: fleet scalability test ----------------
         cluster_robots = [3, 5, 7, 9, 11, 13, 15, 17, 19, 21]
         cluster_times_dict = {rn: [] for rn in cluster_robots} 
         fixed_map = 100
         
-        title2 = f"▶ 实验二：集群扩展性压力测试 (固定地图={fixed_map}x{fixed_map})"
+        title2 = f"▶ Experiment 2: fleet scalability stress test (fixed map={fixed_map}x{fixed_map})"
         print("\n" + "="*60 + "\n" + title2 + "\n" + "="*60)
         f.write("\n" + "="*60 + "\n" + title2 + "\n" + "="*60 + "\n")
         
@@ -391,7 +391,7 @@ def run_stress_test():
                 elapsed = time.time() - start_t
                 cluster_times_dict[rn].append(elapsed)
                 
-                res_str = f"[*] 机器人数量: {rn:>2} | Seed: {seed:>5} | 耗时: {elapsed:.3f} 秒"
+                res_str = f"[*] Robot count: {rn:>2} | Seed: {seed:>5} | Elapsed: {elapsed:.3f} s"
                 print(res_str)
                 f.write(res_str + "\n")
                 
@@ -400,14 +400,14 @@ def run_stress_test():
                     solver.save_visualization(img_name, f"Cluster Extension: Map {fixed_map}x{fixed_map}, {rn} Robots (Seed {seed})")
             
             avg_time = np.mean(cluster_times_dict[rn])
-            f.write(f"--- 机器人数量 {rn} 测试完成，{len(seeds)}次平均耗时: {avg_time:.3f} 秒 ---\n\n")
+            f.write(f"--- Robot count {rn} complete; mean runtime over {len(seeds)} trials: {avg_time:.3f} s ---\n\n")
             
-        f.write("\n✅ 所有压力测试跑完，图像与数据均已存档。\n")
+        f.write("\n✅ All stress tests complete; figures and data archived.\n")
         
-    # ================= 以下是画箱线图和保留拟合曲线的代码 =================
+    # ================= Draw boxplots and retain the fitted curves =================
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
-    # -------- 空间图 --------
+    # -------- Spatial scaling plot --------
     space_data = [space_times_dict[ms] for ms in space_maps]
     space_means = [np.mean(times) for times in space_data]
     
@@ -420,15 +420,15 @@ def run_stress_test():
     z1 = np.polyfit(x1, y1, 2)
     p1 = np.poly1d(z1)
     x1_fit = np.linspace(min(x1)-10, max(x1)+10, 100)
-    ax1.plot(x1_fit, p1(x1_fit), '--', color='#c0392b', alpha=0.8, linewidth=2, label='均值拟合曲线 (O(N^2))')
+    ax1.plot(x1_fit, p1(x1_fit), '--', color='#c0392b', alpha=0.8, linewidth=2, label='Fitted mean curve (O(N^2))')
     
-    ax1.set_title('算法空间扩展性 (Computation vs. Map Size)', fontsize=12)
+    ax1.set_title('Algorithm spatial scalability (Computation vs. Map Size)', fontsize=12)
     ax1.set_xlabel('Map Size (N x N)', fontsize=11)
     ax1.set_ylabel('Compute Time (Seconds)', fontsize=11)
     ax1.grid(True, linestyle=':', alpha=0.7)
     ax1.legend()
 
-    # -------- 集群图 --------
+    # -------- Fleet scaling plot --------
     cluster_data = [cluster_times_dict[rn] for rn in cluster_robots]
     cluster_means = [np.mean(times) for times in cluster_data]
     
@@ -441,16 +441,16 @@ def run_stress_test():
     z2 = np.polyfit(x2, y2, 1)
     p2 = np.poly1d(z2)
     x2_fit = np.linspace(min(x2)-1, max(x2)+1, 100)
-    ax2.plot(x2_fit, p2(x2_fit), '--', color='#2980b9', alpha=0.8, linewidth=2, label='均值线性拟合 (O(K))')
+    ax2.plot(x2_fit, p2(x2_fit), '--', color='#2980b9', alpha=0.8, linewidth=2, label='Linear fit to means (O(K))')
     
-    ax2.set_title('算法集群扩展性 (Computation vs. Robot Num)', fontsize=12)
+    ax2.set_title('Algorithm fleet scalability (Computation vs. Robot Num)', fontsize=12)
     ax2.set_xlabel('Number of Robots (K)', fontsize=11)
     ax2.set_ylabel('Compute Time (Seconds)', fontsize=11)
     ax2.grid(True, linestyle=':', alpha=0.7)
     ax2.legend()
     
     plt.tight_layout()
-    # 4. 图表直接保存在代码同级目录下
+    # 4. Save plots beside the script
     plt.savefig(os.path.join(script_dir, "Final_Performance_Report_Boxplot.png"), dpi=200, bbox_inches='tight')
 
 if __name__ == '__main__':

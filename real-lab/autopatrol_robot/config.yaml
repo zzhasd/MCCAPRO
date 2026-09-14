@@ -1,33 +1,33 @@
 # ==========================================
-# 自动巡检机器人 全局共享配置
+# Shared configuration for autonomous patrol robots
 # ==========================================
 
-# 0 = M1 小车配置, 1 = M3PRO 小车配置, 2 = 本地Windows测试配置
+# 0 = M1 robot configuration, 1 = M3PRO robot configuration, 2 = local Windows test configuration
 select_config: 2
 
-# 机器人自身配置
+# Robot settings
 robot:
   robot_id: 0
 
-# 路径配置
+# Paths are relative to this configuration file; absolute paths are also accepted.
 paths:
   map_yaml:
-    0: "/home/jetson/yahboomcar_ros2_ws/yahboomcar_ws/src/yahboomcar_nav/maps/yahboomcar.yaml"
-    1: "/home/jetson/M3Pro_ws/install/M3Pro_navigation/share/M3Pro_navigation/map/yahboom_map.yaml"
-    2: "D:\\桌面\\MCCA-PRO\\real-lab\\maps\\yahboomcar.yaml"
+    0: "../maps/yahboomcar.yaml"
+    1: "../maps/yahboom_map2.yaml"
+    2: "../maps/yahboomcar.yaml"
   
   image_dir:
-    0: "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto"
-    1: "/home/jetson/chapt7_ws/src/autopatrol_robot/tempphoto"
-    2: "D:\\桌面\\MCCA-PRO\\real-lab\\tempphoto"
+    0: "../tempphoto"
+    1: "../tempphoto"
+    2: "../tempphoto"
 
-# 算法核心参数
+# Core algorithm parameters
 algorithm:
   base_size: 15
   cell_size: 1
   safety_radius_m: 0
   white_ratio_threshold: 0.85  
 
-# 通信与网络配置
+# Communication and network settings
 network:
-  server_url: "http://192.168.123.217:9999/report"
+  server_url: "http://127.0.0.1:9999/report"

@@ -14,7 +14,7 @@ from scipy.spatial import Voronoi, voronoi_plot_2d
 
 warnings.filterwarnings('ignore')
 
-# 移除中文字体，使用 matplotlib 默认的学术英文字体
+# Use the default matplotlib English font instead of a CJK font
 plt.rcParams['font.family'] = 'sans-serif'
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -31,14 +31,14 @@ def _load_tile_first_planner():
     planner_file = next((p for p in candidates if p.exists() and p.resolve() != Path(__file__).resolve()), None)
     if planner_file is None:
         raise FileNotFoundError(
-            '找不到 mainline_tile_first_v2_3_2 算法文件。请将 labF_Dynamic.py 与 '
-            'mainline_tile_first_v2_3_2.py（或上传的带时间戳版本）放在同一目录。'
+            'Cannot find the mainline_tile_first_v2_3_2 algorithm file. Place labF_Dynamic.py and '
+            'mainline_tile_first_v2_3_2.py(or the uploaded timestamped version) in the same directory.'
         )
 
     module_name = '_labf_tile_first_v2_3_2'
     spec = importlib.util.spec_from_file_location(module_name, planner_file)
     if spec is None or spec.loader is None:
-        raise ImportError(f'无法加载路径规划算法文件: {planner_file}')
+        raise ImportError(f'Unable to load the path-planning algorithm file: {planner_file}')
 
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -61,7 +61,7 @@ class DynamicMCPP_Weighted:
         # Initial equal weights 1:1:1
         self.weights = np.ones(robot_num) / robot_num
 
-        # 保留原实验的随机地图生成逻辑
+        # Preserve the original random-map generation logic
         self.generate_map()
         self._prepare_planner_obstacle_mask()
 
@@ -70,7 +70,7 @@ class DynamicMCPP_Weighted:
         self.robot_areas = np.zeros(self.robot_num)
         self.full_assignments = np.full(self.total_grids, -1, dtype=int)
 
-        # 新算法输出结构：铺砖 + 实际闭合路径（不再使用 MST）
+        # New algorithm output: tiling + actual closed routes (no longer using MST)
         self.all_tiles = []
         self.tile_stats = {}
         self.robot_path_dict = {}
@@ -143,7 +143,7 @@ class DynamicMCPP_Weighted:
         )
         self.plan_result = self.planner.solve(method='tile_first')
 
-        # 将新算法的二维 assignment 回写到原实验的一维 full_assignments 结构中
+        # Copy the new algorithm's 2D assignment back into the original 1D full_assignments structure
         self.full_assignments = np.full(self.total_grids, -1, dtype=int)
         for x in range(self.map_size):
             for y in range(self.map_size):
@@ -158,7 +158,7 @@ class DynamicMCPP_Weighted:
         for rid in range(self.robot_num):
             self.robot_areas[rid] = np.count_nonzero(self.planner.assignments == rid)
 
-        # 仅用于保持原快照中的 centroid 显示；不参与新算法的路线规划
+        # Only preserve centroid display in existing snapshots; not used for route planning
         self.centroids_xy = list(self.planner.centroids_xy)
         centroid_points = []
         for cell in self.centroids_xy:
@@ -171,7 +171,7 @@ class DynamicMCPP_Weighted:
     def generate_tiles_and_paths(self):
         """Expose TileFirstMCPP tiling and routed paths in the Lab-F visualization structures."""
         if self.planner is None or self.plan_result is None:
-            raise RuntimeError('请先调用 partition() 完成 TileFirstMCPP 规划。')
+            raise RuntimeError('Call partition() first to complete TileFirstMCPP planning.')
 
         self.all_tiles = list(self.planner.tiles)
         self.tile_stats = {
@@ -205,7 +205,7 @@ class DynamicMCPP_Weighted:
 
         fig, ax = plt.subplots(figsize=(16, 14))
 
-        # 保留原实验的 Voronoi 辅助显示（只用于可视化，不参与路径规划）
+        # Preserve the original Voronoi overlay (visualization only; not used for path planning)
         valid_centroids = self.centroids[np.isfinite(self.centroids).all(axis=1)]
         map_bounds = [0, self.map_size, 0, self.map_size]
         boundary_points = np.array([
@@ -252,7 +252,7 @@ class DynamicMCPP_Weighted:
             ax.scatter(cx, cy, color=color, s=50, marker='o', edgecolors='black', linewidth=1,
                        label=f'Robot {i+1}\nCentroid: {self.centroids_xy[i]}')
 
-        # 绘制 TileFirstMCPP 输出的实际闭合路径，替代原来的 MST 边
+        # Draw actual closed routes from TileFirstMCPP instead of the original MST edges
         for rid, path_data in self.robot_path_dict.items():
             color = colors[rid % len(colors)]
             path = np.asarray(path_data['path'], dtype=float)
@@ -282,7 +282,7 @@ class DynamicMCPP_Weighted:
         plt.tight_layout()
         save_path = os.path.join(output_dir, f'Snapshot_{timestamp}_Step_{step}.png')
         plt.savefig(save_path, dpi=150, bbox_inches='tight', pad_inches=0.0)
-        print(f"\n📸 快照已保存: {save_path}")
+        print(f"\n📸 Snapshot saved: {save_path}")
         plt.close()
 
 
@@ -290,7 +290,7 @@ def run_dynamic_simulation():
     np.random.seed(42)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # 修改：直接输出到工作目录下的 labF-dynamic
+    # Change: write directly under the working directory to labF-dynamic
     output_dir = os.path.join('.', "labF-dynamic")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -315,15 +315,15 @@ def run_dynamic_simulation():
         else:
             C_true_abs[t, 2] = 50.0
 
-    # 用于收集每步的数据，输出CSV
+    # Collect data from each step and output CSV
     experiment_data = []
 
     print(f"🚀 Starting Dynamic Adaptive Simulation | Damping Factor α={alpha} | Time Steps={max_T}")
-    print(f"📁 结果将输出至目录: {output_dir}")
+    print(f"📁 Results will be written to: {output_dir}")
 
     for t in range(max_T):
-        # ✅ 这里添加了单行进度条，\r 回车符会让它在同一行不断覆盖刷新
-        print(f"\r⏳ 正在计算 Step {t+1}/{max_T} ...", end="", flush=True)
+        # ✅ Use a single-line progress bar; the \r carriage return updates the same line
+        print(f"\r⏳ Computing Step {t+1}/{max_T} ...", end="", flush=True)
 
         # 1. Add Gaussian noise to simulate sensor readings
         noise = np.random.normal(0, 2.0, robot_num)
@@ -336,20 +336,20 @@ def run_dynamic_simulation():
         solver.weights = alpha * C_sampled_ratio + (1 - alpha) * solver.weights
         solver.weights /= np.sum(solver.weights)
 
-        # 4. 调用 TileFirstMCPP 完成多机器人铺砖、分区和路径规划
+        # 4. Call TileFirstMCPP for multi-robot tiling, partitioning, and path planning
         solver.partition(max_iter=5)
 
-        # 4.1 记录分区面积占比
+        # 4.1 Record partition area fractions
         total_assigned_area = np.sum(solver.robot_areas)
         area_ratios = solver.robot_areas / (total_assigned_area + 1e-9)
 
-        # 5. 同步新规划器的铺砖与实际路径结果
+        # 5. Synchronize tiling and actual route results from the new planner
         solver.generate_tiles_and_paths()
 
-        # 6. 记录 Path Length（替代原 MST Length）
+        # 6. Record Path Length (replacing the original MST Length)
         path_lengths = [solver.robot_path_dict[i]['total_length'] for i in range(robot_num)]
 
-        # 收集此步数据
+        # Collect data for this step
         experiment_data.append({
             'Step': t,
             'Sensed_C_0': C_sampled_abs[0], 'Sensed_C_1': C_sampled_abs[1], 'Sensed_C_2': C_sampled_abs[2],
@@ -358,19 +358,19 @@ def run_dynamic_simulation():
             'Area_Ratio_0': area_ratios[0], 'Area_Ratio_1': area_ratios[1], 'Area_Ratio_2': area_ratios[2]
         })
 
-        # 7. 在指定时间步截取快照
+        # 7. Capture snapshots at the specified timesteps
         if t in [45, 60, 140]:
             solver.visualize(step=t, output_dir=output_dir, timestamp=timestamp)
-            # ✅ 为了防止被 "\r" 覆盖，截取快照后加一个空 print 换行
+            # ✅ Print a blank line after each snapshot to prevent overwriting by "\r"
             print()
 
-    # 循环结束后，将数据保存为 CSV
+    # After the loop, save data as CSV
     df = pd.DataFrame(experiment_data)
     csv_filename = f"experiment_EMA_Simulation_{timestamp}.csv"
     csv_filepath = os.path.join(output_dir, csv_filename)
     df.to_csv(csv_filepath, index=False)
 
-    print(f"\n✅ 实验运行完毕！实验数据已保存至: {csv_filepath}")
+    print(f"\n✅ Experiment complete! Data saved to: {csv_filepath}")
 
 
 if __name__ == '__main__':

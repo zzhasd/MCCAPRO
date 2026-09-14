@@ -87,14 +87,14 @@ def _parse_trial_data(log_file_path):
     with open(log_file_path, "r", encoding="utf-8") as f:
         content = f.read()
 
-    seed_match = re.search(r"\((\d+)个随机种子\)", content)
+    seed_match = re.search(r"\((\d+)(?:\s+random seeds|\u4e2a\u968f\u673a\u79cd\u5b50)\)", content)
     num_seeds = int(seed_match.group(1)) if seed_match else DEFAULT_NUM_SEEDS
 
     space_pattern = re.compile(
-        r"\[\*\]\s*地图\s*(\d+)x\s*(\d+)\s*\|\s*Seed:\s*(-?\d+)\s*\|\s*耗时:\s*([0-9.]+)\s*秒"
+        r"\[\*\]\s*(?:Map|\u5730\u56fe)\s*(\d+)x\s*(\d+)\s*\|\s*Seed:\s*(-?\d+)\s*\|\s*(?:Elapsed|\u8017\u65f6):\s*([0-9.]+)\s*(?:s|\u79d2)"
     )
     cluster_pattern = re.compile(
-        r"\[\*\]\s*机器人数量:\s*(\d+)\s*\|\s*Seed:\s*(-?\d+)\s*\|\s*耗时:\s*([0-9.]+)\s*秒"
+        r"\[\*\]\s*(?:Robot count|\u673a\u5668\u4eba\u6570\u91cf):\s*(\d+)\s*\|\s*Seed:\s*(-?\d+)\s*\|\s*(?:Elapsed|\u8017\u65f6):\s*([0-9.]+)\s*(?:s|\u79d2)"
     )
 
     space_dict = {ms: [] for ms in SPACE_MAPS}
@@ -168,18 +168,18 @@ def plot_from_log(log_file_path=None):
     log_file_path = os.path.abspath(log_file_path)
     base_dir = os.path.dirname(log_file_path)
 
-    # 1. 读取TXT数据
+    # 1. Read TXT data
     try:
         space_dict, cluster_dict, num_seeds = _parse_trial_data(log_file_path)
     except FileNotFoundError:
         print(f"Error: File not found at {log_file_path}\nPlease check if the file exists.")
         return
 
-    # 定义实验参数
+    # Define experiment parameters
     space_maps = SPACE_MAPS
     cluster_robots = CLUSTER_ROBOTS
 
-    # 检查提取的数据量是否匹配
+    # Check that the extracted data count matches
     expected_count = (len(space_maps) + len(cluster_robots)) * num_seeds
     actual_count = sum(len(v) for v in space_dict.values()) + sum(len(v) for v in cluster_dict.values())
     if actual_count != expected_count:
@@ -188,14 +188,14 @@ def plot_from_log(log_file_path=None):
 
     print(f"Loading newest Lab E data from: {log_file_path}")
 
-    # 2. 数据切片与预处理
+    # 2. Slice and preprocess data
     space_data = [space_dict[ms] for ms in space_maps]
     cluster_data = [cluster_dict[rn] for rn in cluster_robots]
 
     space_means = [np.mean(d) for d in space_data]
     cluster_means = [np.mean(d) for d in cluster_data]
 
-    # 3. 开始绘图
+    # 3. Start plotting
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.1))
 
 
@@ -209,25 +209,25 @@ def plot_from_log(log_file_path=None):
                 boxprops=dict(facecolor='#fadbd8', color='#c0392b', alpha=0.8),
                 medianprops=dict(color='#e74c3c', linewidth=2))
 
-    # 【修改2】将标题、x轴、y轴字体加粗 (添加 fontweight='bold')
+    # [Change 2] Bold the title and x/y-axis labels (add fontweight='bold')
     # ax1.set_title('Spatial Scalability\n (Computation Time vs. Map Size)', fontsize=25, fontweight='bold', pad=15)
     ax1.set_xlabel('Map Size (L x L)', fontsize=25, fontweight='bold')
     ax1.set_ylabel('Computation Time (s)', fontsize=25, fontweight='bold')
 
-    # 【补充】为了视觉统一，将刻度数字也加粗
+    # [Additional change] Bold tick labels for visual consistency
     plt.setp(ax1.get_xticklabels(), fontweight='bold', size=20)
     plt.setp(ax1.get_yticklabels(), fontweight='bold', size=20)
 
-    # 【修改1】彻底不显示背景网格线
+    # [Change 1] Hide all background grid lines
     ax1.grid(False)
 
-    # 调整纵坐标间距
+    # Adjust vertical-axis spacing
     min_y1, max_y1 = get_non_outlier_min_max(space_data)
     y1_margin = (max_y1 - min_y1) * 0.1
     ax1.set_ylim(max(0, min_y1 - y1_margin), max_y1 + y1_margin)
     ax1.locator_params(axis='y', nbins=10)
 
-    # 【修改3】将 legend 的字体加大并加粗
+    # [Change 3] Enlarge and bold the legend text
     ax1.legend(loc='upper left', prop={'size': 20, 'weight': 'bold'})
 
     x2 = np.array(cluster_robots)
@@ -240,25 +240,25 @@ def plot_from_log(log_file_path=None):
                 boxprops=dict(facecolor='#d4e6f1', color='#2980b9', alpha=0.8),
                 medianprops=dict(color='#3498db', linewidth=2))
 
-    # 【修改2】将标题、x轴、y轴字体加粗
+    # [Change 2] Bold the title and x/y-axis labels
     # ax2.set_title('Swarm Scalability\n (Computation Time vs. Robot Num)', fontsize=25, fontweight='bold', pad=15)
     ax2.set_xlabel('Number of Robots (N)', fontsize=25, fontweight='bold')
     ax2.set_ylabel('Computation Time (s)', fontsize=25, fontweight='bold')
 
-    # 【补充】为了视觉统一，将刻度数字也加粗
+    # [Additional change] Bold tick labels for visual consistency
     plt.setp(ax2.get_xticklabels(), fontweight='bold', size=20)
     plt.setp(ax2.get_yticklabels(), fontweight='bold', size=20)
 
-    # 【修改1】彻底不显示背景网格线
+    # [Change 1] Hide all background grid lines
     ax2.grid(False)
 
-    # 调整纵坐标间距
+    # Adjust vertical-axis spacing
     min_y2, max_y2 = get_non_outlier_min_max(cluster_data)
     y2_margin = (max_y2 - min_y2) * 0.1
     ax2.set_ylim(max(0, min_y2 - y2_margin), max_y2 + y2_margin)
     ax2.locator_params(axis='y', nbins=10)
 
-    # 【修改3】将 legend 的字体加大并加粗
+    # [Change 3] Enlarge and bold the legend text
     ax2.legend(loc='upper left', prop={'size': 20, 'weight': 'bold'})
 
     plt.tight_layout()

@@ -170,7 +170,7 @@ class TileFirstMCPP:
                 raise ValueError("robot_weights must contain only finite nonnegative values")
             total_weight = float(weights.sum())
             if total_weight <= 0.0:
-                message = "机器人权重不能全为0，规划失败"
+                message = "Robot weights cannot all be 0; planning failed"
                 print(message)
                 raise ValueError(message)
             weights = weights / total_weight

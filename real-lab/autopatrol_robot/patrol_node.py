@@ -16,31 +16,35 @@ try:
 except ImportError:
     HAS_NAV2_MSGS = False
 
-# 优先使用源码目录绝对路径，保证修改 yaml 后即时生效
-CONFIG_FILE_PATH = '/home/jetson/chapt7_ws/src/autopatrol_robot/autopatrol_robot/config.yaml'
+try:
+    from .runtime_config import config_file_path
+except ImportError:
+    from runtime_config import config_file_path
+
+CONFIG_FILE_PATH = str(config_file_path())
 
 class PatrolNode(BasicNavigator):
     def __init__(self, node_name='patrol_node'):
         super().__init__(node_name)
         
-        # ----------------- 加载 YAML 配置 -----------------
+        # ----------------- Load YAML configuration -----------------
         target_path = CONFIG_FILE_PATH
         if not os.path.exists(target_path):
-            # 备用路径：如果绝对路径不存在，取本脚本同级目录的 config.yaml
+            # Fallback: if the absolute path is missing, use the adjacent config.yaml
             target_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.yaml')
 
         try:
             with open(target_path, 'r', encoding='utf-8') as f:
                 self.global_config = yaml.safe_load(f)
-                self.get_logger().info(f"读取yaml成功: {target_path}")
+                self.get_logger().info(f"YAML loaded successfully: {target_path}")
         except Exception as e:
-            self.get_logger().error(f"读取yaml失败: {e}，将使用系统默认参数")
+            self.get_logger().error(f"Failed to load YAML: {e}; using system defaults")
             self.global_config = {}
 
-        # ----------------- 导航相关定义 -----------------
+        # ----------------- Navigation settings -----------------
         self.declare_parameter('initial_point', [0.0, 0.0, 0.0])
         
-        # 将 robot_id 的默认值交由 yaml 提供
+        # Read the default robot_id from YAML
         yaml_robot_id = self.global_config.get('robot', {}).get('robot_id', 0)
         self.declare_parameter('robot_id', yaml_robot_id)
         
@@ -56,18 +60,18 @@ class PatrolNode(BasicNavigator):
         self.current_weights = [0.5, 0.5]
         self.weights_changed_flag = False 
 
-        # ----------------- 速度与状态管理 -----------------
+        # ----------------- Speed and state management -----------------
         self.current_speed_gear = 4 
-        self.returning_home = False  # 标记是否正在执行低电量返航
+        self.returning_home = False  # Track whether a low-battery return is in progress
         
         if HAS_NAV2_MSGS:
             self.speed_pub = self.create_publisher(SpeedLimit, '/speed_limit', 10)
         else:
             self.speed_pub = None
-            self.get_logger().warn("未找到 nav2_msgs 包，调速功能将无法生效！")
+            self.get_logger().warn("nav2_msgs package not found; speed control will be unavailable!")
 
-        # 将 server_url 的值交由 yaml 提供
-        self.server_url = self.global_config.get('network', {}).get('server_url', "http://10.201.126.178:9999/report")
+        # Read server_url from YAML
+        self.server_url = self.global_config.get('network', {}).get('server_url', "http://127.0.0.1:9999/report")
         
         self.report_thread = threading.Thread(target=self.report_position_loop, daemon=True)
         self.report_thread.start()
@@ -96,31 +100,31 @@ class PatrolNode(BasicNavigator):
                         new_weights = data.get("weights")
                         new_speed = data.get("speed")
                         
-                        # ----- 1. 速度调控 (优先级最高) -----
+                        # ----- 1. Speed control (highest priority) -----
                         if new_speed is not None and new_speed != self.current_speed_gear:
-                            self.get_logger().warn(f"检测到速度挡位变化: {self.current_speed_gear} -> {new_speed}")
+                            self.get_logger().warn(f"Speed setting changed: {self.current_speed_gear} -> {new_speed}")
                             self.current_speed_gear = new_speed
                             
                             if new_speed == -1:
-                                self.get_logger().error("电量不足10%，触发强制下线！中断当前任务！")
+                                self.get_logger().error("Battery below 10%; forcing offline and interrupting the current task!")
                                 self.cancelTask()
                             elif new_speed == 0:
-                                self.get_logger().error("收到速度挡位 0，立即中断当前任务，原地待命！")
+                                self.get_logger().error("Received speed setting 0; interrupting the task and holding position!")
                                 self.cancelTask()
                             elif new_speed == 2:
-                                self.get_logger().info("收到速度挡位 2，调整最高速度上限为 50%。")
+                                self.get_logger().info("Received speed setting 2; setting the maximum speed to 50%.")
                                 self.set_speed_limit(50.0)
                             elif new_speed == 4:
-                                self.get_logger().info("收到速度挡位 4，恢复默认全速 100%。")
+                                self.get_logger().info("Received speed setting 4; restoring full speed to 100%.")
                                 self.set_speed_limit(100.0)
 
-                        # ----- 2. 权重/路径调控 -----
-                        # 如果已经由于没电下线，则不再理会权重变更
+                        # ----- 2. Weight/path control -----
+                        # Ignore weight changes after a battery-triggered offline transition
                         if self.current_speed_gear != -1:
                             if new_weights and len(new_weights) == len(self.current_weights):
                                 diff = sum(abs(a - b) for a, b in zip(self.current_weights, new_weights))
                                 if diff > 1e-4:  
-                                    self.get_logger().warn(f"权重变化: {self.current_weights} -> {new_weights}，重规路径！")
+                                    self.get_logger().warn(f"Weights changed: {self.current_weights} -> {new_weights}; replanning!")
                                     self.current_weights = new_weights
                                     self.weights_changed_flag = True
                                     if self.current_speed_gear != 0:
@@ -129,7 +133,7 @@ class PatrolNode(BasicNavigator):
             except requests.exceptions.RequestException:
                 pass
             except Exception as e:
-                self.get_logger().warn(f'位置上报线程异常: {str(e)}')
+                self.get_logger().warn(f'Position reporting thread error: {str(e)}')
 
     def get_pose_by_xyyaw(self, x, y, yaw):
         pose = PoseStamped()
@@ -153,7 +157,7 @@ class PatrolNode(BasicNavigator):
     def get_target_points(self):
         from .generate_target_points import generate_target_points
         current_pos = (self.current_x, self.current_y)
-        self.get_logger().info(f'获取机器人 {self.robot_id_} 的目标点，参考起点: {current_pos}')
+        self.get_logger().info(f'Getting targets for robot {self.robot_id_}; reference start: {current_pos}')
         points = generate_target_points(self.robot_id_, self.current_weights, current_pos)
         return points
 
@@ -165,11 +169,11 @@ class PatrolNode(BasicNavigator):
         
         result = self.getResult()
         if result == TaskResult.SUCCEEDED:
-            self.get_logger().info('导航结果：成功')
+            self.get_logger().info('Navigation result: succeeded')
         elif result == TaskResult.CANCELED:
-            self.get_logger().warn('导航结果：被取消 (可能是由于调速/下线/权重变更)')
+            self.get_logger().warn('Navigation result: canceled (possibly due to speed, offline status, or weight changes)')
         else:
-            self.get_logger().error('导航结果：失败')
+            self.get_logger().error('Navigation result: failed')
         return result
 
     def get_current_pose(self):
@@ -184,32 +188,32 @@ def main():
     rclpy.init()
     patrol = PatrolNode()
 
-    patrol.get_logger().info("正在初始化位置")
+    patrol.get_logger().info("Initializing position")
     patrol.init_robot_pose()
     patrol.set_speed_limit(100.0)
 
     while rclpy.ok():
-        # 【下线返航逻辑】
+        # [Offline return-to-start logic]
         if patrol.current_speed_gear == -1:
             if not patrol.returning_home:
-                patrol.get_logger().error(">>> 启动自动返航程序，目标：地图起点 (0, 0) <<<")
-                patrol.set_speed_limit(100.0)  # 返航使用默认全速
+                patrol.get_logger().error(">>> Starting automatic return; target: map origin (0, 0) <<<")
+                patrol.set_speed_limit(100.0)  # Return at the default full speed
                 target_pose = patrol.get_pose_by_xyyaw(0.0, 0.0, 0.0)
                 patrol.nav_to_pose(target_pose)
                 patrol.returning_home = True
-                patrol.get_logger().info("已到达起点，机器人进入下线休眠状态。")
+                patrol.get_logger().info("Reached the start; robot entering offline sleep mode.")
             
-            # 到达起点后，无限阻塞在此处，不再索要巡检任务
+            # Block indefinitely after reaching the start; do not request further patrol tasks
             time.sleep(1.0)
             continue
 
-        # 【0挡位原地待命阻塞】
+        # [0 Block and hold position at this speed setting]
         if patrol.current_speed_gear == 0:
-            patrol.get_logger().info("当前速度挡位为 0，任务已中断，原地待命...", throttle_duration_sec=3.0)
+            patrol.get_logger().info("Current speed setting is 0; task interrupted, holding position...", throttle_duration_sec=3.0)
             time.sleep(1.0)
             continue
             
-        patrol.returning_home = False # 重置状态（万一被手动满血复活）
+        patrol.returning_home = False # Reset state (in case of manual reactivation)
         patrol.weights_changed_flag = False 
         target_points_list = patrol.get_target_points()  
         
@@ -221,13 +225,13 @@ def main():
                 break
                 
             x, y, yaw = point[0], point[1], point[2]
-            patrol.get_logger().info(f"前往下一个目标点，坐标为{x:.2f}，{y:.2f}")
+            patrol.get_logger().info(f"Moving to the next target at{x:.2f}, {y:.2f}")
             
             target_pose = patrol.get_pose_by_xyyaw(x, y, yaw)
             result = patrol.nav_to_pose(target_pose)
             
             if patrol.current_speed_gear == 0:
-                patrol.get_logger().info("巡检由于收到 0 挡位命令被强制打断！")
+                patrol.get_logger().info("Patrol interrupted by speed setting 0!")
                 break
             if patrol.current_speed_gear == -1:
                 break
@@ -235,14 +239,14 @@ def main():
                 break
             
             if result == TaskResult.SUCCEEDED:
-                patrol.get_logger().info(f"已到达目标点，坐标为{x:.2f}，{y:.2f}")
+                patrol.get_logger().info(f"Reached the target at{x:.2f}, {y:.2f}")
         
         if patrol.weights_changed_flag:
-            patrol.get_logger().info("旧的巡检由于权重变化被打断，重新开始巡检...")
+            patrol.get_logger().info("Previous patrol interrupted by a weight change; restarting patrol...")
             continue
             
         if patrol.current_speed_gear not in [0, -1]:
-            patrol.get_logger().info("已完成所有目标点遍历，将再次循环")
+            patrol.get_logger().info("All targets visited; starting another cycle")
     
     rclpy.shutdown()
 

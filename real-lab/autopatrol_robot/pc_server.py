@@ -7,7 +7,7 @@ import logging
 import os
 import io
 
-# --- 新增的异步落盘依赖 ---
+# --- New dependencies for asynchronous disk writes ---
 import csv
 from datetime import datetime
 from queue import Queue, Empty
@@ -18,11 +18,11 @@ try:
     HAS_MAP_LIBS = True
 except ImportError:
     HAS_MAP_LIBS = False
-    print("⚠️ 缺少 yaml 或 PIL 库，地图功能可能无法使用。请执行: pip install pyyaml Pillow")
+    print("⚠️ yaml or PIL is missing; map features may be unavailable. Run: pip install pyyaml Pillow")
 
 app = Flask(__name__)
 
-# ================= 配置参数 =================
+# ================= Configuration parameters =================
 PORT = 9999
 ROBOT_NUM = 2
 DMA_ALPHA = 0.6         
@@ -30,25 +30,27 @@ UPDATE_INTERVAL = 1500.0
 WAIT_DURATION = 100.0   
 HISTORY_SIZE = 20       
 
-# ✨ 新增：机器车的扫地/巡检覆盖半径（单位：米）
+# ✨ New: robot cleaning/patrol coverage radius (meters)
 COVERAGE_RADIUS = 2.25   
 
-# 续航设定（秒）：可为每台机器人独立设置
+# Battery endurance settings (seconds); configurable per robot
 MAX_BATTERY_SEC_LIST = [40.0 * 60.0, 60.0 * 60.0]
 
 if len(MAX_BATTERY_SEC_LIST) < ROBOT_NUM:
-    print("⚠️ 警告: MAX_BATTERY_SEC_LIST 长度小于 ROBOT_NUM，将使用默认值 40 分钟补齐。")
+    print("⚠️ Warning: MAX_BATTERY_SEC_LIST is shorter than ROBOT_NUM; padding with the default 40 minutes.")
     MAX_BATTERY_SEC_LIST += [40.0 * 60.0] * (ROBOT_NUM - len(MAX_BATTERY_SEC_LIST))
 
-# ================= 地图配置 =================
-MAP_DIR = r"D:\桌面\Voronoi-and-Adaptive-Grid\real-lab\maps"
+# ================= Map configuration =================
+MAP_DIR = os.environ.get("AUTOPATROL_MAP_DIR", os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "maps")
+))
 MAP_YAML = "yahboomcar_v3.yaml"
 
 map_info = None
 map_image_bytes = None
 
 def load_map():
-    """解析 yaml 并将 pgm 转换为 png 字节流"""
+    """Parse YAML and convert PGM to PNG bytes"""
     global map_info, map_image_bytes
     if not HAS_MAP_LIBS: return
     try:
@@ -73,30 +75,30 @@ def load_map():
             'real_w': w * res,
             'real_h': h * res
         }
-        print(f"🗺️ 地图加载成功: {cfg['image']} (尺寸: {w}x{h}, 真实大小: {map_info['real_w']:.2f}m x {map_info['real_h']:.2f}m)")
+        print(f"🗺️ Map loaded: {cfg['image']} (size: {w}x{h}, physical size: {map_info['real_w']:.2f}m x {map_info['real_h']:.2f}m)")
     except Exception as e:
-        print(f"❌ 地图加载失败，请检查路径是否正确: {e}")
+        print(f"❌ Map loading failed; check the path: {e}")
 
-# ================= 轨迹异步存储配置 =================
+# ================= Asynchronous trajectory storage settings =================
 trajectory_queue = Queue()
 trajectory_files = {}
 
 def init_trajectory_files():
-    """初始化轨迹记录文件，生成带时间戳的文件名"""
+    """Initialize a trajectory log with a timestamped filename"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     os.makedirs("logs", exist_ok=True)
     
     for i in range(ROBOT_NUM):
         filename = os.path.join("logs", f"robot_{i}_path_{timestamp}.csv")
-        # a 模式追加，确保实时写入不覆盖
+        # a Append mode ensures live writes do not overwrite existing data
         f = open(filename, 'a', newline='', encoding='utf-8')
         writer = csv.writer(f)
-        writer.writerow(['timestamp', 'x', 'y']) # 写入表头
+        writer.writerow(['timestamp', 'x', 'y']) # Write the header
         trajectory_files[i] = (f, writer)
-        print(f"📝 Robot {i} 轨迹记录文件已创建: {filename}")
+        print(f"📝 Robot {i} Trajectory log created: {filename}")
 
 def trajectory_saver_loop():
-    """后台独立线程：负责将队列中的数据实时写入磁盘"""
+    """Dedicated background thread: write queued data to disk in real time"""
     while True:
         try:
             item = trajectory_queue.get(timeout=1.0)
@@ -105,15 +107,15 @@ def trajectory_saver_loop():
             if r_id in trajectory_files:
                 f, writer = trajectory_files[r_id]
                 writer.writerow([t, x, y])
-                f.flush() # 强制刷新到磁盘，防断电丢失
+                f.flush() # Force flushing to disk to reduce data loss on power failure
                 
             trajectory_queue.task_done()
         except Empty:
             pass
         except Exception as e:
-            print(f"❌ 写入轨迹文件时出错: {e}")
+            print(f"❌ Error writing trajectory log: {e}")
 
-# ================= 状态数据结构 =================
+# ================= State data structure =================
 state_lock = threading.Lock()
 start_time = time.time()
 weights_array = [1.0 / ROBOT_NUM for _ in range(ROBOT_NUM)]
@@ -126,7 +128,7 @@ for i in range(ROBOT_NUM):
         'y': None,
         'last_time': time.time(),
         'speed_history': deque(maxlen=HISTORY_SIZE),
-        'path_history': deque(maxlen=2000),  # 内存中仅保留最近2000点供前端渲染
+        'path_history': deque(maxlen=2000),  # Retain only the latest 2000 points in memory for frontend rendering
         'start_active_time': None, 
         'battery_percent': 100.0
     }
@@ -142,7 +144,7 @@ def update_robot_battery(r_id, current_time):
         state['battery_percent'] = (remaining / max_battery_sec) * 100.0
         
         if state['battery_percent'] < 10.0 and speeds_array[r_id] != -1:
-            print(f"⚠️ Robot {r_id} 续航不足10% ({state['battery_percent']:.1f}%)，强制下线！")
+            print(f"⚠️ Robot {r_id} Battery below 10% ({state['battery_percent']:.1f}%); forcing offline!")
             speeds_array[r_id] = -1
             just_went_offline = True
     return just_went_offline
@@ -188,7 +190,7 @@ def calculate_weights_loop():
                     any_offline_this_tick = True
             do_calculate_weights(current_time, force_update=any_offline_this_tick)
 
-# ================= 路由接口 =================
+# ================= HTTP routes =================
 
 @app.route('/')
 def index():
@@ -225,7 +227,7 @@ def get_status():
         "histories": histories,
         "paths": paths,
         "map_info": map_info,
-        "coverage_radius": COVERAGE_RADIUS  # ✨ 将半径配置下发前端
+        "coverage_radius": COVERAGE_RADIUS  # ✨ Send the radius setting to the frontend
     })
 
 @app.route('/report', methods=['POST'])
@@ -256,7 +258,7 @@ def report_position():
             state['last_time'] = new_time
             state['path_history'].append([new_x, new_y]) 
             
-            # 极速非阻塞推送至落盘队列
+            # Push to the disk-write queue without blocking
             trajectory_queue.put((r_id, new_time, new_x, new_y))
 
             if update_robot_battery(r_id, new_time):
@@ -295,13 +297,13 @@ def force_offline():
 if __name__ == '__main__':
     load_map() 
     
-    # 启动时初始化 CSV 文件并开启后台落盘守护线程
+    # Initialize the CSV file and start the background writer daemon at startup
     init_trajectory_files()
     threading.Thread(target=trajectory_saver_loop, daemon=True).start()
     threading.Thread(target=calculate_weights_loop, daemon=True).start()
     
     log = logging.getLogger('werkzeug')
     log.setLevel(logging.ERROR)
-    print(f"🚀 PC Server 启动，HTTP 端口 {PORT}")
-    print(f"📊 监控中心访问地址: http://localhost:{PORT}/")
+    print(f"🚀 PC Server started on HTTP port {PORT}")
+    print(f"📊 Monitoring dashboard URL: http://localhost:{PORT}/")
     app.run(host='0.0.0.0', port=PORT, debug=False)

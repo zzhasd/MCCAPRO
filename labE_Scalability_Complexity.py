@@ -1,14 +1,14 @@
 """Lab E: Scalability / Complexity stress test for the current mainline planner.
 
-实验流程与 voronoi-Adapt-MST-labE-pro.py 保持一致：
-1) 50 个固定随机种子；
-2) 实验一：固定 5 台机器人，地图边长 25..200；
-3) 实验二：固定 100x100 地图，机器人数量 3..21；
-4) 每次记录端到端耗时，按实验条件记录平均耗时；
-5) 输出同结构 TXT 日志与 Final_Performance_Report_Boxplot.png。
+Keep the experiment workflow consistent with voronoi-Adapt-MST-labE-pro.py:
+1) 50 fixed random seeds;
+2) Experiment 1: fix 5 robots and vary the map side length 25..200;
+3) Experiment 2: fix a 100x100 map and vary the robot count 3..21;
+4) Record end-to-end runtime for each trial and mean runtime for each condition;
+5) Write TXT logs with the same structure and Final_Performance_Report_Boxplot.png.
 
-本文件不实现任何 MCPP 算法步骤，只负责：加载 mainline、创建 solver、调用 solve()、
-采集实验时间并输出统计图表。
+This file implements no MCPP algorithm steps; it only loads mainline, constructs the solver, and calls solve(),
+Collect experiment runtimes and produce statistical plots.
 """
 from __future__ import annotations
 
@@ -24,20 +24,20 @@ import warnings
 
 import matplotlib
 
-# 压力测试通常在无图形界面的服务器/终端运行；避免 GUI 初始化开销与后端问题。
+# Stress tests typically run on headless servers/terminals; avoid GUI initialization overhead and backend issues.
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
 warnings.filterwarnings("ignore")
 
-# 与参考脚本一致的中文字体设置；系统无 SimHei 时 matplotlib 会自动回退。
+# Use the reference script font settings; matplotlib falls back automatically if SimHei is unavailable.
 plt.rcParams["font.sans-serif"] = ["SimHei"]
 plt.rcParams["axes.unicode_minus"] = False
 
 
 # -----------------------------------------------------------------------------
-# 实验配置：保持与 voronoi-Adapt-MST-labE-pro.py 一致
+# Experiment configuration: match voronoi-Adapt-MST-labE-pro.py
 # -----------------------------------------------------------------------------
 SEEDS: Tuple[int, ...] = (
     42, 100, 256, 512, 1024, 2048, 4096, 8192, 12345, 99999,
@@ -55,21 +55,21 @@ CLUSTER_FIXED_MAP = 100
 
 OBSTACLE_RATIO = 0.10
 
-# mainline 自己负责算法参数；实验脚本只显式传入实验变量和障碍比例。
-# 如需固定某个 mainline 版本，可设置环境变量：
+# mainline manages its own algorithm parameters; the experiment passes only the experimental variables and obstacle ratio.
+# To select a specific mainline version, set the environment variable:
 #   MCPP_MAINLINE=/absolute/path/to/mainline_xxx.py
 MAINLINE_ENV = "MCPP_MAINLINE"
 
 
 # -----------------------------------------------------------------------------
-# mainline 加载：仅做实验依赖解析，不包含算法逻辑
+# mainline loading: resolve experiment dependencies only; no algorithm logic
 # -----------------------------------------------------------------------------
 def _find_mainline_path(script_dir: Path) -> Path:
     env_path = os.environ.get(MAINLINE_ENV)
     if env_path:
         path = Path(env_path).expanduser().resolve()
         if not path.is_file():
-            raise FileNotFoundError(f"{MAINLINE_ENV} 指向的文件不存在: {path}")
+            raise FileNotFoundError(f"{MAINLINE_ENV} points to a file that does not exist: {path}")
         return path
 
     exact_candidates = (
@@ -80,7 +80,7 @@ def _find_mainline_path(script_dir: Path) -> Path:
         if path.is_file():
             return path.resolve()
 
-    # 兼容带版本号/时间戳/括号的 mainline 文件名（例如本次提供的文件）。
+    # Support mainline filenames with version numbers, timestamps, or parentheses (such as the supplied file).
     candidates = sorted(
         (
             p for p in script_dir.glob("mainline*.py")
@@ -93,40 +93,40 @@ def _find_mainline_path(script_dir: Path) -> Path:
         return candidates[0].resolve()
 
     raise FileNotFoundError(
-        "未找到 mainline Python 文件。请将 mainline.py / mainline*.py 放在本实验脚本同目录，"
-        f"或设置环境变量 {MAINLINE_ENV}=<mainline文件绝对路径>。"
+        "No mainline Python file found. Place mainline.py / mainline*.py beside this experiment script, "
+        f"or set the environment variable {MAINLINE_ENV}=<absolute path to the mainline file>."
     )
 
 
 def _load_mainline(path: Path) -> ModuleType:
     spec = importlib.util.spec_from_file_location("mcpp_mainline_for_labE", path)
     if spec is None or spec.loader is None:
-        raise ImportError(f"无法加载 mainline: {path}")
+        raise ImportError(f"Unable to load mainline: {path}")
     module = importlib.util.module_from_spec(spec)
-    # dataclass 等运行时机制会通过 sys.modules 查找模块命名空间。
+    # dataclass and other runtime mechanisms look up module namespaces through sys.modules.
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
 
 def _resolve_solver_class(module: ModuleType) -> Type:
-    # 当前 mainline 的公开类名为 TileFirstMCPP，并保留 FACTMCCA 别名。
+    # The current mainline exposes TileFirstMCPP and retains the FACTMCCA alias.
     for name in ("TileFirstMCPP", "FACTMCCA"):
         solver_cls = getattr(module, name, None)
         if solver_cls is not None:
             return solver_cls
-    raise AttributeError("mainline 中未找到 TileFirstMCPP 或 FACTMCCA")
+    raise AttributeError("mainline does not contain TileFirstMCPP or FACTMCCA")
 
 
 # -----------------------------------------------------------------------------
-# 单次实验：只创建 mainline solver 并调用 solve()
+# Single experiment: only construct the mainline solver and call solve()
 # -----------------------------------------------------------------------------
 def _run_one(solver_cls: Type, map_size: int, robot_num: int, seed: int) -> Tuple[float, dict]:
-    """返回与参考脚本口径一致的端到端耗时，以及 mainline 的 solve() 结果。
+    """Return end-to-end runtime consistent with the reference script, along with the mainline solve() result.
 
-    参考脚本的计时从 solver 构造之前开始，因此这里也把地图生成/初始化包含在 elapsed 中。
-    mainline result 中的 total_time 仅表示 solve() 自身时间，可供需要时进一步核查，
-    但 Lab E 主日志仍使用 elapsed，保持实验口径一致。
+    The reference script starts timing before solver construction, so elapsed also includes map generation/initialization.
+    mainline result total_time measures only solve() itself and can be checked separately if needed,
+    The main Lab E log still uses elapsed for consistent measurement.
     """
     started = time.perf_counter()
     solver = solver_cls(
@@ -141,7 +141,7 @@ def _run_one(solver_cls: Type, map_size: int, robot_num: int, seed: int) -> Tupl
 
 
 # -----------------------------------------------------------------------------
-# 绘图：严格沿用参考脚本的两组箱线图 + 拟合曲线结构
+# Plotting: preserve the reference structure of two boxplots with fitted curves
 # -----------------------------------------------------------------------------
 def _save_final_boxplot(
     script_dir: Path,
@@ -152,7 +152,7 @@ def _save_final_boxplot(
 ) -> None:
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
 
-    # -------- 空间图 --------
+    # -------- Spatial scaling plot --------
     space_data = [space_times_dict[ms] for ms in space_maps]
     space_means = [np.mean(times) for times in space_data]
 
@@ -177,16 +177,16 @@ def _save_final_boxplot(
         color="#c0392b",
         alpha=0.8,
         linewidth=2,
-        label="均值拟合曲线 (O(N^2))",
+        label="Fitted mean curve (O(N^2))",
     )
 
-    ax1.set_title("算法空间扩展性 (Computation vs. Map Size)", fontsize=12)
+    ax1.set_title("Algorithm spatial scalability (Computation vs. Map Size)", fontsize=12)
     ax1.set_xlabel("Map Size (N x N)", fontsize=11)
     ax1.set_ylabel("Compute Time (Seconds)", fontsize=11)
     ax1.grid(True, linestyle=":", alpha=0.7)
     ax1.legend()
 
-    # -------- 集群图 --------
+    # -------- Fleet scaling plot --------
     cluster_data = [cluster_times_dict[rn] for rn in cluster_robots]
     cluster_means = [np.mean(times) for times in cluster_data]
 
@@ -211,10 +211,10 @@ def _save_final_boxplot(
         color="#2980b9",
         alpha=0.8,
         linewidth=2,
-        label="均值线性拟合 (O(K))",
+        label="Linear fit to means (O(K))",
     )
 
-    ax2.set_title("算法集群扩展性 (Computation vs. Robot Num)", fontsize=12)
+    ax2.set_title("Algorithm fleet scalability (Computation vs. Robot Num)", fontsize=12)
     ax2.set_xlabel("Number of Robots (K)", fontsize=11)
     ax2.set_ylabel("Compute Time (Seconds)", fontsize=11)
     ax2.grid(True, linestyle=":", alpha=0.7)
@@ -230,7 +230,7 @@ def _save_final_boxplot(
 
 
 # -----------------------------------------------------------------------------
-# Lab E 主实验流程
+# Lab E Main experiment workflow
 # -----------------------------------------------------------------------------
 def run_stress_test() -> None:
     seeds = list(SEEDS)
@@ -242,26 +242,26 @@ def run_stress_test() -> None:
 
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # 实验输出目录：MCCA-PRO/LAB_DATA/labE_时间戳
+    # Experiment output directory: MCCA-PRO/LAB_DATA/labE_<timestamp>
     output_dir = script_dir / "LAB_DATA" / f"labE_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     log_file_path = output_dir / f"StressTest_DataLog_{timestamp}.txt"
 
-    print(f"📂 实验结果图表和TXT数据将自动保存在目录: {output_dir}")
+    print(f"📂 Experiment plots and TXT data will be saved automatically to: {output_dir}")
     print(f"🔗 Mainline: {mainline_path.name}")
 
     with log_file_path.open("w", encoding="utf-8", buffering=1024 * 1024) as f:
         f.write("=" * 60 + "\n")
-        f.write(f" mCPP 时空扩展性压力测试 - 数据留档 ({len(seeds)}个随机种子)\n")
-        f.write(f" 测试种子列表: {seeds}\n")
+        f.write(f" mCPP Spatial and fleet scalability stress test - data archive ({len(seeds)} random seeds)\n")
+        f.write(f" Test seed list: {seeds}\n")
         f.write("=" * 60 + "\n\n")
 
-        # ---------------- 实验一：空间扩展性测试 ----------------
+        # ---------------- Experiment 1: spatial scalability test ----------------
         space_maps = list(SPACE_MAPS)
         space_times_dict: Dict[int, List[float]] = {ms: [] for ms in space_maps}
 
-        title1 = f"▶ 实验一：空间扩展性压力测试 (固定机器人={SPACE_FIXED_ROBOTS})"
+        title1 = f"▶ Experiment 1: spatial scalability stress test (fixed robots={SPACE_FIXED_ROBOTS})"
         print("\n" + "=" * 60 + "\n" + title1 + "\n" + "=" * 60)
         f.write("=" * 60 + "\n" + title1 + "\n" + "=" * 60 + "\n")
 
@@ -270,24 +270,24 @@ def run_stress_test() -> None:
                 elapsed, _ = _run_one(solver_cls, ms, SPACE_FIXED_ROBOTS, seed)
                 space_times_dict[ms].append(elapsed)
 
-                res_str = f"[*] 地图 {ms:>3}x{ms:<3} | Seed: {seed:>5} | 耗时: {elapsed:.3f} 秒"
+                res_str = f"[*] Map {ms:>3}x{ms:<3} | Seed: {seed:>5} | Elapsed: {elapsed:.3f} s"
                 print(res_str)
                 f.write(res_str + "\n")
 
             avg_time = float(np.mean(space_times_dict[ms]))
             f.write(
-                f"--- 地图 {ms}x{ms} 测试完成，{len(seeds)}次平均耗时: "
-                f"{avg_time:.3f} 秒 ---\n\n"
+                f"--- Map {ms}x{ms} complete; mean runtime over {len(seeds)} trials: "
+                f"{avg_time:.3f} s ---\n\n"
             )
-            # 只在每个实验条件完成后刷盘，避免每次 trial 都 flush 的 I/O 开销。
+            # Flush only after each experiment condition to avoid per-trial flush I/O overhead.
             f.flush()
 
-        # ---------------- 实验二：集群扩展性测试 ----------------
+        # ---------------- Experiment 2: fleet scalability test ----------------
         cluster_robots = list(CLUSTER_ROBOTS)
         cluster_times_dict: Dict[int, List[float]] = {rn: [] for rn in cluster_robots}
         fixed_map = CLUSTER_FIXED_MAP
 
-        title2 = f"▶ 实验二：集群扩展性压力测试 (固定地图={fixed_map}x{fixed_map})"
+        title2 = f"▶ Experiment 2: fleet scalability stress test (fixed map={fixed_map}x{fixed_map})"
         print("\n" + "=" * 60 + "\n" + title2 + "\n" + "=" * 60)
         f.write("\n" + "=" * 60 + "\n" + title2 + "\n" + "=" * 60 + "\n")
 
@@ -296,18 +296,18 @@ def run_stress_test() -> None:
                 elapsed, _ = _run_one(solver_cls, fixed_map, rn, seed)
                 cluster_times_dict[rn].append(elapsed)
 
-                res_str = f"[*] 机器人数量: {rn:>2} | Seed: {seed:>5} | 耗时: {elapsed:.3f} 秒"
+                res_str = f"[*] Robot count: {rn:>2} | Seed: {seed:>5} | Elapsed: {elapsed:.3f} s"
                 print(res_str)
                 f.write(res_str + "\n")
 
             avg_time = float(np.mean(cluster_times_dict[rn]))
             f.write(
-                f"--- 机器人数量 {rn} 测试完成，{len(seeds)}次平均耗时: "
-                f"{avg_time:.3f} 秒 ---\n\n"
+                f"--- Robot count {rn} complete; mean runtime over {len(seeds)} trials: "
+                f"{avg_time:.3f} s ---\n\n"
             )
             f.flush()
 
-        f.write("\n✅ 所有压力测试跑完，图像与数据均已存档。\n")
+        f.write("\n✅ All stress tests complete; figures and data archived.\n")
 
     _save_final_boxplot(
         script_dir,
