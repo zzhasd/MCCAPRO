@@ -48,7 +48,7 @@ def plot_scatter_and_fit(ax, x_data, y_data, title, y_label, color, corr_val):
     z = np.polyfit(x_data, y_data, 1)
     p = np.poly1d(z)
     fit_x = np.linspace(min(x_data), max(x_data), 100)
-    ax.plot(fit_x, p(fit_x), color='red', linestyle='--', linewidth=2, label=f'Linear regression\n(y={z[0]:.4f}x+{z[1]:.4f})')
+    ax.plot(fit_x, p(fit_x), color='red', linestyle='--', linewidth=2, label=f'Linear regression\n(y={z[0]:.4f}x{z[1]:+.4f})')
     # Ideal line y=x
     ax.plot([0, max(x_data)], [0, max(x_data)], color='gray', linestyle=':', label='Ideal line (y=x)')
 

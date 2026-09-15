@@ -1,0 +1,46 @@
+{
+  "runs": 110,
+  "seeds": [
+    11,
+    13,
+    15,
+    17,
+    19,
+    21,
+    23,
+    25,
+    27,
+    29
+  ],
+  "methods": 11,
+  "path_components": 440,
+  "failures": 0,
+  "common_six_seed_differences_excluding_runtime": {
+    "path_length_sum": 0,
+    "max_robot_path_length": 0,
+    "max_robot_execution_time_s": 0,
+    "path_load_balance_cv": 0,
+    "turn_count_sum": 0,
+    "max_robot_turn_count": 0,
+    "turn_load_balance_cv": 0
+  },
+  "visualization_length_mismatches": {},
+  "reductions": {
+    "path_length_sum": {
+      "baseline": "Your-DARP-Adaptive-MST-3Tiles",
+      "percent": 43.50324804413558
+    },
+    "max_robot_path_length": {
+      "baseline": "Your-DARP-Adaptive-MST-3Tiles",
+      "percent": 45.72823459391579
+    },
+    "max_robot_execution_time_s": {
+      "baseline": "Your-DARP-Adaptive-MST-3Tiles",
+      "percent": 47.06184095157766
+    },
+    "turn_count_sum": {
+      "baseline": "DARP-Boustrophedon-W4",
+      "percent": 50.57208237986271
+    }
+  }
+}

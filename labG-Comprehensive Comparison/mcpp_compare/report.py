@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from .metrics import ROBOT_MAX_SPEED_M_S, ROBOT_TRACK_WIDTH_M
+
 
 SOURCES = [
     ("SCoPP-QLB", "ICRA 2021 arXiv", "https://arxiv.org/abs/2103.14709"),
@@ -26,6 +28,7 @@ SOURCES = [
 
 def write_report(output_path: Path, visualizations_enabled: bool = True) -> Path:
     paths = pd.read_csv(output_path / "path_summary.csv")
+    seeds = sorted(pd.read_csv(output_path / "path_metrics.csv")["seed"].unique().tolist())
     repo_status = pd.read_csv(output_path / "official_repo_status.csv")
     failed_runs = pd.read_csv(output_path / "failed_runs.csv")
     closure_audit = pd.read_csv(output_path / "path_closure_audit.csv")
@@ -41,11 +44,11 @@ def write_report(output_path: Path, visualizations_enabled: bool = True) -> Path
                 "",
                 "This report retains traditional cell-visiting MCPP baselines and adds MCCA-PRO v2.3.2 by directly calling `mainline_tile_first_v2_3_2.py`, along with SCoPP-style planning over discrete monitoring cells.",
                 "",
-                "The experiment uses one scenario: `medium-obstacles`, a `30 x 30` map, initial obstacle ratio `0.15`, `4` robots, and random seeds `[11, 13, 15, 17, 19, 21]`. After map generation, only the largest connected free component is retained; smaller disconnected free components are filled as obstacles.",
+                f"The experiment uses one scenario: `medium-obstacles`, a `30 x 30` map, initial obstacle ratio `0.15`, `4` robots, and random seeds `{seeds}`. After map generation, only the largest connected free component is retained; smaller disconnected free components are filled as obstacles.",
                 "",
                 "SCoPP does not force each waypoint to represent a 4x4 free-cell footprint. The grid represents the discrete monitoring cells obtained after SCoPP selects cell size from UAV FOV/height, followed by quick load-balanced assignment, connectivity repair, and routing within each region.",
                 "",
-                "All summary results are `mean +/- std` across 6 random seeds. Final comparisons use path-level metrics: total path length, maximum per-robot path length, maximum per-robot kinematic execution time, path load balance, total turns, maximum per-robot turns, turn load balance, and planning runtime. Partition CSV files are also written; colored SCoPP regions represent monitoring-cell assignments.",
+                f"All summary results are `mean +/- std` across {len(seeds)} random seeds. Final comparisons use path-level metrics: total path length, maximum per-robot path length, maximum per-robot kinematic execution time, path load balance, total turns, maximum per-robot turns, turn load balance, and planning runtime. Partition CSV files are also written; colored SCoPP regions represent monitoring-cell assignments.",
                 "",
                 "## Comparison scope",
                 "",
@@ -55,7 +58,7 @@ def write_report(output_path: Path, visualizations_enabled: bool = True) -> Path
                 "",
                 "- `path_length_sum`: Sum of all robot path lengths; lower is better.",
                 "- `max_robot_path_length`: Longest individual robot path, an approximation of makespan; lower is better.",
-                "- `max_robot_execution_time_s`: Estimate execution time for each final robot path as `path length / 0.4 + total turn angle / (2 * 0.4 / 0.2314)`, then take the maximum across robots, in seconds; turns use a differential-drive model with counter-rotating wheels.",
+                f"- `max_robot_execution_time_s`: Estimate execution time for each final robot path as `path length / {ROBOT_MAX_SPEED_M_S:g} + total turn angle / (2 * {ROBOT_MAX_SPEED_M_S:g} / {ROBOT_TRACK_WIDTH_M:g})`, then take the maximum across robots, in seconds. All robots use the R1 speed and track width in paper Fig. 3 under an ideal differential-drive approximation. One coordinate unit is interpreted as 1 m; total turn angle is cumulative absolute heading change in radians. Counter-rotating in-place turns are assumed, without acceleration, slip, or waiting.",
                 "- `path_load_balance_cv`: Coefficient of variation of robot path lengths; lower indicates more balanced path loads.",
                 "- `turn_count_sum`: Total direction changes across all robot paths, including right-angle turns and U-turns; lower indicates smoother trajectories.",
                 "- `max_robot_turn_count`: Maximum number of turns assigned to one robot; lower is better.",
@@ -107,7 +110,7 @@ def write_report(output_path: Path, visualizations_enabled: bool = True) -> Path
                 "",
                 "## Interpretation",
                 "",
-                _mcca_result_line(paths),
+                _mcca_result_line(paths, len(seeds)),
                 "2. Traditional MCPP methods remain as reference methods requiring every cell to be visited.",
                 "3. SCoPP-QLB is a baseline for discrete monitoring-cell assignment and routing; it does not use a 4x4 footprint.",
                 "4. SCoPP-QLB paths stay within each robot's assigned region to avoid crossing other robot regions.",
@@ -202,18 +205,29 @@ def _failed_runs_section(df: pd.DataFrame) -> str:
     )
 
 
-def _mcca_result_line(paths: pd.DataFrame) -> str:
+def _mcca_result_line(paths: pd.DataFrame, seed_count: int) -> str:
     rows = paths[paths["method"] == "MCCA-PRO-v2.3.2"]
     if rows.empty:
         return "1. MCCA-PRO-v2.3.2 has no successful results in this run."
     row = rows.iloc[0]
+    comparison = ""
+    baseline = paths[paths["method"] == "Your-DARP-Adaptive-MST-3Tiles"]
+    if not baseline.empty and baseline.iloc[0]["max_robot_execution_time_s_mean"] > 0:
+        reduction = 100.0 * (
+            1.0 - row["max_robot_execution_time_s_mean"]
+            / baseline.iloc[0]["max_robot_execution_time_s_mean"]
+        )
+        comparison = (
+            f" The execution-time reduction versus Your-DARP-Adaptive-MST-3Tiles "
+            f"(DARP-CPPF in manuscript Table I) is {reduction:.1f}%."
+        )
     return (
-        "1. MCCA-PRO-v2.3.2 has a total final-path length over the 6 shared random seeds of "
+        f"1. MCCA-PRO-v2.3.2 has a total final-path length over the {seed_count} shared random seeds of "
         f"`{row['path_length_sum_mean_pm_std']}`, maximum individual path length "
         f"`{row['max_robot_path_length_mean_pm_std']}`, maximum individual kinematic execution time "
         f"`{row['max_robot_execution_time_s_mean_pm_std']}`, path load-balance CV "
         f"`{row['path_load_balance_cv_mean_pm_std']}`, planning time "
-        f"`{row['planning_runtime_ms_mean_pm_std']} ms`."
+        f"`{row['planning_runtime_ms_mean_pm_std']} ms`." + comparison
     )
 
 

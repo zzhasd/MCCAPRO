@@ -11,9 +11,10 @@ from .grid import Coord, GridMap, normalize_weights
 from .planners import PlanResult
 from .user_mst import Point, TileLayer, TiledMST, compute_tiled_mst, tiled_mst_component_walks
 
-ROBOT_MAX_SPEED_M_S = 0.4
-ROBOT_TRACK_WIDTH_M = 0.2314
-ROBOT_WHEELBASE_M = 0.2844
+ROBOT_MAX_SPEED_M_S = 0.2
+# R1 geometry from paper Fig. 3: wheel-centre spacing, not vehicle body dimensions.
+ROBOT_TRACK_WIDTH_M = 0.193
+ROBOT_WHEELBASE_M = 0.185
 ROBOT_COUNTER_ROTATION_MAX_ANGULAR_SPEED_RAD_S = 2.0 * ROBOT_MAX_SPEED_M_S / ROBOT_TRACK_WIDTH_M
 
 

@@ -3,7 +3,14 @@ from __future__ import annotations
 import numpy as np
 
 from .grid import GridMap
-from .metrics import path_distance, stc_contour_paths
+from .metrics import (
+    ROBOT_MAX_SPEED_M_S,
+    ROBOT_TRACK_WIDTH_M,
+    path_distance,
+    path_execution_time_s,
+    path_turn_angle,
+    stc_contour_paths,
+)
 from .planners import PlanResult
 from .user_mst import compute_tiled_mst, tiled_mst_component_walks
 
@@ -36,6 +43,10 @@ def audit_path_closure(
                 "path_mode": path_mode,
                 "point_count": len(path),
                 "path_length": path_distance(path),
+                "total_turn_angle_rad": path_turn_angle(path),
+                "execution_time_s": path_execution_time_s(path),
+                "speed_m_s": ROBOT_MAX_SPEED_M_S,
+                "track_width_m": ROBOT_TRACK_WIDTH_M,
                 "first_x": first[0] if first is not None else np.nan,
                 "first_y": first[1] if first is not None else np.nan,
                 "last_x": last[0] if last is not None else np.nan,

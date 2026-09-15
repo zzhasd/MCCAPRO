@@ -248,9 +248,9 @@ for i, (title, df) in enumerate(datasets):
     
     # ===================== Draw on the primary axes (ax) A_blocks/B_blocks =====================
     # Draw primary-axis line plots
-    line4 = ax.plot(df['grid_size'], df['A_blocks'], marker='o', label='CPPF Blocks', 
+    line4 = ax.plot(df['grid_size'], df['A_blocks'], marker='o', label='MCCA Blocks', 
             color=colors[3], linewidth=6, markersize=15, linestyle='--')
-    line5 = ax.plot(df['grid_size'], df['B_blocks'], marker='o', label='MCCA Blocks', 
+    line5 = ax.plot(df['grid_size'], df['B_blocks'], marker='o', label='CPPF Blocks', 
             color=colors[4], linewidth=6, markersize=15, linestyle='--')
 
     # Configure the primary X/Y axes

@@ -37,7 +37,7 @@ SCENARIOS = [
         "height": 30,
         "obstacle_ratio": 0.15,
         "robots": 4,
-        "seeds": [11, 13, 15, 17, 19, 21],
+        "seeds": [11, 13, 15, 17, 19, 21, 23, 25, 27, 29],
     }
 ]
 
@@ -86,6 +86,7 @@ def run_static_suite(output_path: Path) -> dict[str, Path]:
     failed_rows = []
     for scenario in SCENARIOS:
         for seed in scenario["seeds"]:
+            print(f"Static suite: {scenario['name']}, seed={seed}; {len(path_rows)} runs completed", flush=True)
             grid = GridMap.random_with_filled_disconnected(
                 scenario["width"],
                 scenario["height"],
@@ -187,7 +188,7 @@ def run_visualization_suite(output_path: Path) -> dict[str, Path]:
     if (output_path.parents[0] / "third_party" / "official" / "MSTC_Star").exists():
         planners.extend([OfficialMFCPlanner(), OfficialMSTCStarPlanner(cut_off_opt=True)])
     if (output_path.parents[0] / "third_party" / "official" / "LS-MCPP").exists():
-        planners.append(OfficialLSMCPPPlanner(iterations=80, seed=23))
+        planners.append(OfficialLSMCPPPlanner(iterations=80, seed=seed))
     visual_dir = output_path / "visualizations"
     records = []
     failed_rows = []

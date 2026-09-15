@@ -43,3 +43,5 @@ tmp/
 submission/
 real-lab/autopatrol_robot/config.local.yaml
 real-lab/tempphoto/
+*.md
+*.csv

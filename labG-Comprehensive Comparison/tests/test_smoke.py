@@ -21,6 +21,17 @@ from mcpp_compare.sensor_planners import SCoPPGridPlanner
 
 
 class PlannerSmokeTest(unittest.TestCase):
+    def test_execution_time_corrected_speed_and_counter_rotation(self) -> None:
+        # Two metres and one 90-degree turn: 10 s straight + wheel arc / speed.
+        corner = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]
+        expected = 10.0 + (np.pi / 2.0) * (0.193 / 2.0) / 0.2
+        self.assertAlmostEqual(path_execution_time_s(corner), expected)
+        # The correction scales both translation and rotation, including U-turns.
+        for path in [[], [(0.0, 0.0), (2.0, 0.0)], corner,
+                     [(0.0, 0.0), (1.0, 0.0), (0.0, 0.0)]]:
+            old_time = path_execution_time_s(path, 0.4, 2.0 * 0.4 / 0.193)
+            self.assertAlmostEqual(path_execution_time_s(path), 2.0 * old_time)
+
     def test_core_planners_cover_every_free_cell(self) -> None:
         grid = GridMap.random_with_filled_disconnected(10, 10, 0.08, seed=5)
         self.assertEqual(len(grid.connected_components(grid.free_cells)), 1)
@@ -116,6 +127,14 @@ class PlannerSmokeTest(unittest.TestCase):
         self.assertEqual(paths.max_robot_path_length, 10.0)
         self.assertGreater(path_execution_time_s(turning_shorter), path_execution_time_s(straight_longer))
         self.assertAlmostEqual(paths.max_robot_execution_time_s, path_execution_time_s(turning_shorter))
+
+        # A narrower track can change which robot determines the maximum time.
+        result.paths[0] = [(0.0, 0.0), (10.3, 0.0)]
+        old_times = [path_execution_time_s(p, 0.2, 0.4 / 0.2314) for p in result.paths]
+        self.assertGreater(old_times[1], old_times[0])
+        corrected = evaluate_paths(grid, result, "track-width-test", seed=0)
+        self.assertLess(path_execution_time_s(turning_shorter), 51.5)
+        self.assertAlmostEqual(corrected.max_robot_execution_time_s, 51.5)
 
 
 if __name__ == "__main__":

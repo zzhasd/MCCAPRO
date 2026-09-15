@@ -126,7 +126,7 @@ def run_visualization():
     ax2.annotate(
         'Initial Equal Weights',
         xy=(0, 0.33),
-        xytext=(5, 0.45),
+        xytext=(1, 0.520), 
         arrowprops=dict(
             facecolor='black',
             shrink=0.05,

@@ -17,7 +17,8 @@ The main report is written to `outputs/comparison_report.md`. Raw and
 aggregated static metrics are written as CSV files in the same directory.
 Same-map final-path figures are written to `outputs/visualizations/`.
 The default experiment suite uses one scenario: `medium-obstacles`, `30 x 30`,
-obstacle ratio `0.15`, `4` robots, and seeds `[11, 13, 15, 17, 19, 21]`.
+obstacle ratio `0.15`, `4` robots, and 10 seeds
+`[11, 13, 15, 17, 19, 21, 23, 25, 27, 29]` (110 runs across 11 methods).
 After random obstacle sampling, disconnected non-largest free components are
 filled as obstacles.
 Per-seed path metrics include path length, load balance, turn counts, estimated
@@ -25,13 +26,20 @@ kinematic execution time, and planning runtime. Summary CSV files report each
 metric as mean, standard deviation, and a formatted `mean +/- std` column
 across the seed set. `max_robot_execution_time_s` is computed per robot from
 that robot's final path shape and then maximized across robots; it uses
-`path_length / 0.4 + total_turn_angle / (2 * 0.4 / 0.2314)` for the shared
-counter-rotating four-wheel robot model. `planning_runtime_ms` is planner
+`path_length / 0.2 + total_turn_angle / (2 * 0.2 / 0.193)` for the shared
+ideal differential-drive model. The benchmark interprets one coordinate unit
+as 1 m and total turn angle as cumulative absolute heading change in radians.
+All robots use R1's 0.2 m/s speed as the wheel-speed bound and its 0.193 m
+track width (left-to-right wheel-centre spacing) from paper Fig. 3. Acceleration,
+slip, and waiting are excluded. `planning_runtime_ms` is planner
 computation time, not mission execution time. When official code returns a
 planner runtime, the adapter uses that returned value; otherwise it measures
 the planner core call and includes final path generation needed to turn a
 partition into executable paths, while excluding kinematic execution-time
 estimation, visualization, and metric aggregation.
+
+The 2026-09-15 speed and track-width corrections, recalculated Table I values, and minimal
+manuscript patch are recorded in [execution_time_correction.md](execution_time_correction.md).
 
 `DARP-Boustrophedon-W4` is evaluated as a closed round trip: after reaching the
 end of its obstacle-safe swath route, each robot retraces that route to its
@@ -39,6 +47,9 @@ start. Its reported path length is therefore exactly twice the open route.
 `SCoPP-QLB` uses the same closed-round-trip convention after its monitoring
 waypoints are visited. `outputs/path_closure_audit.csv` records the first/last
 point and closure gap for every seed, method, robot, and path component.
+It also records path length, cumulative turn angle, execution time, and the
+speed/track-width parameters, allowing per-robot execution times to be checked
+without rerunning planners.
 
 The suite directly calls repository-level `mainline_tile_first_v2_3_2.py` as
 `MCCA-PRO-v2.3.2`, using the same generated map and seed as every baseline.
